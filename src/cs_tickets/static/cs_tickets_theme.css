@@ -718,8 +718,20 @@ body.upload-page {
   border-top: 1px solid var(--border);
 }
 
-.training-revert-form {
+.training-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.training-footer-note {
   margin-top: 0.75rem;
+  margin-bottom: 0;
+}
+
+.training-revert-form {
+  margin: 0;
 }
 
 .btn-secondary {

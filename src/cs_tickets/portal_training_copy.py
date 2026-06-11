@@ -15,6 +15,7 @@ UPLOAD_INTRO = (
 UPLOAD_STEP_HEADING = "Upload classified workbook"
 UPLOAD_BUTTON = "Upload and review"
 UPLOAD_LOADING = "Uploading and parsing…"
+BACK_TO_CLASSIFY_LABEL = "Back to categorize"
 
 REVIEW_INTRO_ONE = "Found {n} new category not in the reference list."
 REVIEW_INTRO_MANY = "Found {n} new categories not in the reference list."

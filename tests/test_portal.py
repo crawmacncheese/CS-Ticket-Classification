@@ -176,6 +176,8 @@ def test_training_upload_page(repo_root: Path, monkeypatch: pytest.MonkeyPatch) 
     assert "Update categories" in r.text
     assert "training-wizard" in r.text
     assert "Upload classified workbook" in r.text
+    assert "Back to categorize" in r.text
+    assert 'href="/"' in r.text
 
 
 def _training_sample_row(**tier_overrides: str) -> dict[str, str]:

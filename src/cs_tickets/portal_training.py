@@ -40,6 +40,7 @@ from cs_tickets.portal_training_copy import (
     TRAINING_TITLE,
     UNDO_FOOTNOTE,
     UNDO_LAST_SAVE,
+    BACK_TO_CLASSIFY_LABEL,
     UPLOAD_BUTTON,
     UPLOAD_INTRO,
     UPLOAD_LOADING,
@@ -365,21 +366,25 @@ def training_preview_section_html(
 
 
 def training_footer_html(*, show_revert: bool, show_back: bool = True) -> str:
+    if not show_revert and not show_back:
+        return ""
+    back = ""
+    if show_back:
+        back = f'<a href="/" class="btn btn-secondary">{BACK_TO_CLASSIFY_LABEL}</a>'
     revert = ""
     if show_revert:
         revert = f"""
         <form action="/training/revert" method="post" class="training-revert-form">
             <button type="submit" class="btn btn-secondary">{UNDO_LAST_SAVE}</button>
-        </form>
-        <p class="meta">{UNDO_FOOTNOTE}</p>
-        """
-    back = ""
-    if show_back:
-        back = '<p class="links"><a href="/" class="btn btn-secondary">Back to categorize</a></p>'
+        </form>"""
+    footnote = f'<p class="meta training-footer-note">{UNDO_FOOTNOTE}</p>' if show_revert else ""
     return f"""
     <footer class="training-footer">
-        {back}
-        {revert}
+        <div class="training-footer-actions">
+            {back}
+            {revert}
+        </div>
+        {footnote}
     </footer>"""
 
 
@@ -408,7 +413,6 @@ def training_page_shell(
 def training_upload_body_html(*, show_revert: bool) -> str:
     return f"""
     <p class="meta">{UPLOAD_INTRO}</p>
-    {training_footer_html(show_revert=show_revert, show_back=False)}
     <h2 class="section-header">{UPLOAD_STEP_HEADING}</h2>
     <div class="upload-card-wrap">
         <div class="upload-card">
@@ -417,7 +421,8 @@ def training_upload_body_html(*, show_revert: bool) -> str:
                 <button type="submit" class="btn btn-primary" id="training-upload-btn" data-loading-btn data-loading-label="{UPLOAD_LOADING}">{UPLOAD_BUTTON}</button>
             </form>
         </div>
-    </div>"""
+    </div>
+    {training_footer_html(show_revert=show_revert, show_back=True)}"""
 
 
 def review_intro_html(n: int) -> str:
