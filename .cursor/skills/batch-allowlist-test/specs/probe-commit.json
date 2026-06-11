@@ -1,0 +1,7 @@
+{
+  "profile": "batch-commit",
+  "description": "Probe fixture — Phase 1 commit simulation with rules",
+  "assertions": {
+    "min_net_tbc_improvement": 0
+  }
+}

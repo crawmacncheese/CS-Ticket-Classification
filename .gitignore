@@ -1,0 +1,53 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Test / coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+credentials.json
+*credentials*.json
+service-account*.json
+
+# CLI pipeline output (keep directory)
+out/*.csv
+!out/.gitkeep
+
+# Local Zendesk exports (large JSON; keep directory via .gitkeep)
+data/*
+!data/.gitkeep
+
+# Generated batch allowlist analysis reports
+reports/*
+!reports/.gitkeep
+
+# Training portal snapshots (session-local)
+doc/.snapshots/
+
+# Local scratch in doc/ (committed: Taxonomy.csv, CS_ticket_new_categorizations.xlsx, training_rules.json)
+doc/*.docx
+doc/*.png
+
+# Root-level working copies of categorization spreadsheets (canonical copy in doc/)
+/*.xlsx
+
+# Logs
+*.log

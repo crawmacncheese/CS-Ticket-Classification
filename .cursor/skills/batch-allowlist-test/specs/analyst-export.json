@@ -1,0 +1,16 @@
+{
+  "description": "Analyst batch run over real export (edit paths before use)",
+  "presteps": [],
+  "pytest": [],
+  "batch": {
+    "ndjson_dir": "data/",
+    "merge_tuples_from": "path/to/classified_upload.xlsx",
+    "selected_tuples_json": "path/to/selected.json",
+    "with_rules": true,
+    "ablation": true,
+    "output_dir": "reports/analyst-run"
+  },
+  "assertions": {
+    "min_net_tbc_improvement": 0
+  }
+}

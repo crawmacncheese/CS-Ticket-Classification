@@ -1,0 +1,447 @@
+[
+  {
+    "id": "live_chat.b2c.strict",
+    "tier": ["B2C", "Service Task", "General Support", "No Content - Live chat auto-trigger", "N/A"],
+    "weight": 15.0,
+    "any_tags": ["zopim_chat"],
+    "any_subject": ["conversation with"],
+    "any_blob": ["https://subscribe.scmp.com/"]
+  },
+  {
+    "id": "chat.account_portal.upgrade.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Upgrade Inquiry", "N/A"],
+    "weight": 12.0,
+    "any_tags": ["zopim_chat"],
+    "any_subject": ["conversation with", "missed conversation with"],
+    "any_blob": ["account.scmp.com/manage/subscription?upgrade", "upgrade=true", "upgrade inquiry"]
+  },
+  {
+    "id": "chat.account_portal.subscriber.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 11.0,
+    "any_tags": ["zopim_chat"],
+    "all_tags": ["existing_subscriber", "digital"],
+    "any_subject": ["conversation with", "missed conversation with"],
+    "any_blob": ["account.scmp.com"],
+    "exclude_blob": ["upgrade=true", "manage/subscription?upgrade", "?upgrade"]
+  },
+  {
+    "id": "chat.account_portal.existing.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["zopim_chat", "existing_subscriber"],
+    "any_subject": ["conversation with", "missed conversation with"],
+    "any_blob": ["account.scmp.com"],
+    "exclude_blob": ["upgrade=true", "manage/subscription?upgrade", "?upgrade"]
+  },
+  {
+    "id": "chat.account_portal.new_subscriber.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["zopim_chat", "new_subscriber"],
+    "any_subject": ["conversation with", "missed conversation with"],
+    "any_blob": ["account.scmp.com"]
+  },
+  {
+    "id": "sales.account_enquiry.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["account_enquiry"]
+  },
+  {
+    "id": "sales.new_subscriber.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["new_subscriber"]
+  },
+  {
+    "id": "sales.subscription_pricing.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["subscription_-_pricing"]
+  },
+  {
+    "id": "sales.physical_print.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Upgrade Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_blob": [
+      "looking for physical",
+      "physical paper",
+      "paper subscription",
+      "home delivery sprint",
+      "print subscription"
+    ],
+    "exclude_blob": ["delivery service resumption"]
+  },
+  {
+    "id": "sales.reply_renewal_subject.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_subject": [
+      "scmp renewal",
+      "subscription renewal",
+      "renewal, exp",
+      "renewal 26/",
+      "renewal 27/"
+    ]
+  },
+  {
+    "id": "sales.site_license_renewal.b2b",
+    "tier": ["B2B", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 12.0,
+    "any_tags": ["site_license_-_add_or_remove_users", "site_license"],
+    "any_blob": ["renewal", " scmp renewal", "subscription renewal"]
+  },
+  {
+    "id": "account.password_reset.b2c",
+    "tier": ["B2C", "Service Task", "General Support", "User Error / Correction - Request to resent password", "N/A"],
+    "weight": 11.0,
+    "any_tags": ["account_-_reset_password"]
+  },
+  {
+    "id": "account.update_info.b2c",
+    "tier": ["B2C", "Service Task", "Account Management", "User Error / Correction - Requesting to send newsletter to another email address", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["account_-_update_info"]
+  },
+  {
+    "id": "account.contact_change.b2c",
+    "tier": ["B2C", "Service Task", "Account Management", "User Error / Correction - Requesting to send newsletter to another email address", "N/A"],
+    "weight": 10.0,
+    "any_blob": ["whatsapp", "mobile phone number", "change my email", "another email address"]
+  },
+  {
+    "id": "sales.subscription_fee_enquiry.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_subject": ["subscription fee enquery", "subscription fee enquiry", "subsription management", "subscription management"]
+  },
+  {
+    "id": "sales.renewal_of_subscription.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_subject": ["renewal of subscription"]
+  },
+  {
+    "id": "junk.misc_not_subscribed.b2c",
+    "tier": ["B2C", "Junk", "Junk", "PR / External Sales / Editorial Noise", "N/A"],
+    "weight": 11.0,
+    "all_tags": ["miscellaneous", "not_subscribed"]
+  },
+  {
+    "id": "sales.subscription_renew_tag.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["subscription_-_renew", "account_renewal"]
+  },
+  {
+    "id": "billing.reply_po.b2c",
+    "tier": ["B2C", "Service Task", "Billing & Admin", "Invoices and PO request", "N/A"],
+    "weight": 11.0,
+    "any_blob": ["purchase order", "acknowledge receipt of purchase order", "notice of purchase order"]
+  },
+  {
+    "id": "general.retention_offer.b2c",
+    "tier": ["B2C", "Service Task", "General Support", "Retention Offer", "N/A"],
+    "weight": 12.0,
+    "any_blob": [
+      "continue to support scmp",
+      "hope you will continue",
+      "support scmp journalism",
+      "continue supporting scmp"
+    ]
+  },
+  {
+    "id": "live_chat.b2b_print",
+    "tier": ["B2B", "Service Task", "General Support", "No Content - Live chat auto-trigger", "N/A"],
+    "weight": 16.0,
+    "any_tags": ["zopim_chat"],
+    "requires_b2b_print_context": true
+  },
+  {
+    "id": "account.remove_card.b2c",
+    "tier": ["B2C", "Service Task", "General Support", "Remove card details", "N/A"],
+    "weight": 10.0,
+    "any_blob": [
+      "remove card",
+      "remove my credit card",
+      "delete card details",
+      "remove payment card",
+      "delete the non-default credit card",
+      "remove credit card",
+      "delete card on file"
+    ]
+  },
+  {
+    "id": "account.delete_account.b2c",
+    "tier": ["B2C", "Service Task", "Account Management", "Request to delete account", "N/A"],
+    "weight": 10.0,
+    "any_blob": ["delete my account", "close my account", "remove my account"]
+  },
+  {
+    "id": "account.data_erasure.b2c",
+    "tier": ["B2C", "Service Task", "Account Management", "Request to delete account", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["data_enquiry"],
+    "any_blob": [
+      "data erasure",
+      "delete all my personal data",
+      "delete account",
+      "remove my personal data"
+    ]
+  },
+  {
+    "id": "sales.upgrade.b2c",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Upgrade Inquiry", "N/A"],
+    "weight": 9.0,
+    "any_blob": ["upgrade my subscription", "upgrade inquiry", "upgrade plan", "include physical"]
+  },
+  {
+    "id": "sales.renewal.b2c_tags_blob",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_tags": [
+      "subscription_-_renew",
+      "account_renewal",
+      "account_-_renewal",
+      "annual_term",
+      "monthly_term"
+    ],
+    "any_blob": [
+      " renew ",
+      "renew ",
+      "your renewal",
+      "subscription period",
+      "scmp renewal",
+      "renewal reminder",
+      "renewal and"
+    ]
+  },
+  {
+    "id": "sales.renewal.b2c_tags_only",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["subscription_-_renew", "account_renewal", "account_-_renewal"]
+  },
+  {
+    "id": "sales.renewal.b2c_subscriber_digital",
+    "tier": ["B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A"],
+    "weight": 10.0,
+    "all_tags": ["existing_subscriber", "digital"],
+    "any_blob": ["renewal", " renew", "rate", "pricing", "subscription fee", "how much"]
+  },
+  {
+    "id": "tech.access_issue.b2c_tags_only",
+    "tier": ["B2C", "Complaint", "Technical Bug", "Access Loop or App Bug", "N/A"],
+    "weight": 12.0,
+    "any_tags": ["product_-_access_issue", "product_issue_-_digital"]
+  },
+  {
+    "id": "tech.access_issue.b2c",
+    "tier": ["B2C", "Complaint", "Technical Bug", "Access Loop or App Bug", "N/A"],
+    "weight": 12.0,
+    "any_tags": ["product_-_access_issue", "product_issue_-_digital"],
+    "any_blob": [
+      "cannot access",
+      "can't access",
+      "unable to access",
+      "access an article",
+      "paid for a subscription",
+      "can't download",
+      "download your pdf",
+      "pdf download",
+      "e-paper",
+      "epaper",
+      "unable to log in",
+      "unable to log",
+      "can't log in",
+      "cannot log in",
+      "log in to my",
+      "sign in to",
+      "only log in through"
+    ]
+  },
+  {
+    "id": "tech.access_issue.b2c_login_subject",
+    "tier": ["B2C", "Complaint", "Technical Bug", "Access Loop or App Bug", "N/A"],
+    "weight": 12.0,
+    "any_subject": ["unable to log in", "unable to log", "can't log in", "cannot log in"]
+  },
+  {
+    "id": "tech.epaper.b2c",
+    "tier": ["B2C", "Complaint", "Technical Bug", "Access Loop or App Bug", "N/A"],
+    "weight": 10.0,
+    "any_subject": ["epaper", "e-paper", "e paper"],
+    "any_blob": [
+      "epaper",
+      "e-paper",
+      "e paper",
+      "download the pdf",
+      "unable to download",
+      "daily email"
+    ]
+  },
+  {
+    "id": "billing.system_report.payment.b2c",
+    "tier": ["B2C", "Service Task", "Billing & Admin", "System Report", "N/A"],
+    "weight": 10.0,
+    "any_blob": ["stripe payment completed", "payment completed notification"]
+  },
+  {
+    "id": "billing.system_report.rosetta_renewal.b2c",
+    "tier": ["B2C", "Service Task", "Billing & Admin", "System Report", "N/A"],
+    "weight": 14.0,
+    "any_blob": ["rosetta system email", "rosetta system e-mail"]
+  },
+  {
+    "id": "billing.system_report.files.b2c",
+    "tier": ["B2C", "Service Task", "Billing & Admin", "System Report", "N/A"],
+    "weight": 10.0,
+    "any_blob": [
+      "bundle transactions recorded",
+      "monthly missing claim",
+      "nil return",
+      " - file"
+    ]
+  },
+  {
+    "id": "billing.system_report.order_confirmation.b2c",
+    "tier": ["B2C", "Service Task", "Billing & Admin", "System Report", "N/A"],
+    "weight": 10.0,
+    "any_subject": [
+      "order confirmation",
+      "credit card payment",
+      "payment confirmation",
+      "subscription payment confirmation"
+    ],
+    "any_blob": [
+      "scmp order confirmation",
+      "thank you for your order",
+      "payment confirmation"
+    ]
+  },
+  {
+    "id": "billing.system_report.remittance.b2c",
+    "tier": ["B2C", "Service Task", "Billing & Admin", "System Report", "N/A"],
+    "weight": 10.0,
+    "any_subject": ["remittance notification"],
+    "any_blob": ["remittance notification"]
+  },
+  {
+    "id": "logistics.delivery_tags.b2c",
+    "tier": ["B2C", "Service Task", "Logistics", "Print Subs - Suspension and Resume confirmation", "N/A"],
+    "weight": 10.0,
+    "any_tags": [
+      "delivery_-_missing_or_delay_delivery",
+      "1._extend_end_date",
+      "2._paper_replenishment"
+    ]
+  },
+  {
+    "id": "logistics.delivery_subject.b2c",
+    "tier": ["B2C", "Service Task", "Logistics", "Print Subs - Suspension and Resume confirmation", "N/A"],
+    "weight": 12.0,
+    "any_subject": ["delivery service resumption"],
+    "any_blob": [
+      "delivery service resumption",
+      "missing paper",
+      "missing copy",
+      "paper replenishment",
+      "change of delivery address",
+      "change of address",
+      "delivery of style magazine"
+    ]
+  },
+  {
+    "id": "logistics.address_change_tags.b2c",
+    "tier": ["B2C", "Service Task", "Logistics", "Print Subs - Suspension and Resume confirmation", "N/A"],
+    "weight": 10.0,
+    "any_tags": ["address_-_change_of_address"]
+  },
+  {
+    "id": "general.next_billing_rate.b2c",
+    "tier": ["B2C", "Service Task", "General Support", "Next billing rate", "N/A"],
+    "weight": 10.0,
+    "any_blob": [
+      "next billing",
+      "billing rate",
+      "how much will i be charged",
+      "next charge"
+    ]
+  },
+  {
+    "id": "junk.external_noise.b2c",
+    "tier": ["B2C", "Junk", "Junk", "PR / External Sales / Editorial Noise", "N/A"],
+    "weight": 12.0,
+    "any_blob": [
+      "media release",
+      "press preview",
+      "video monetization partnership",
+      "internship application",
+      "marketing intern applicant",
+      "publish a post",
+      "opinion piece submission",
+      "write-up to publish",
+      "pr collaboration",
+      "prayer for considering",
+      "report phishing",
+      "impersonating scmp",
+      "phishing campaign",
+      "sponsorship invitation",
+      "partnership inquiry",
+      "brand partnership",
+      "employment verification",
+      "cob3992",
+      "top talent services association",
+      "contact details needed for employment"
+    ]
+  },
+  {
+    "id": "junk.external_noise_chinese.b2c",
+    "tier": ["B2C", "Junk", "Junk", "PR / External Sales / Editorial Noise", "N/A"],
+    "weight": 12.0,
+    "any_blob": ["採訪邀請", "傳媒採訪", "新聞稿", "誠邀", "媒體採訪"],
+    "any_subject": ["採訪邀請", "傳媒採訪", "新聞稿", "媒體採訪"]
+  },
+  {
+    "id": "junk.external_noise_editorial_tag.b2c",
+    "tier": ["B2C", "Junk", "Junk", "PR / External Sales / Editorial Noise", "N/A"],
+    "weight": 12.0,
+    "any_tags": ["editorial"],
+    "any_blob": ["採訪", "新聞稿", "media invitation", "interview", "permit comments"]
+  },
+  {
+    "id": "junk.external_noise_media_invitation.b2c",
+    "tier": ["B2C", "Junk", "Junk", "PR / External Sales / Editorial Noise", "N/A"],
+    "weight": 12.0,
+    "any_subject": ["[media invitation]", "media invitation"]
+  },
+  {
+    "id": "junk.external_noise_tags.b2c",
+    "tier": ["B2C", "Junk", "Junk", "PR / External Sales / Editorial Noise", "N/A"],
+    "weight": 8.0,
+    "any_tags": ["hr", "corporate_comms", "advertising"]
+  },
+  {
+    "id": "complaint.cancel_posties.b2c",
+    "tier": ["B2C", "Complaint", "Refund", "Cancellation Request", "N/A"],
+    "weight": 12.0,
+    "any_blob": ["cancellation of posties", "posties printed"]
+  },
+  {
+    "id": "complaint.cancel_language.b2c",
+    "tier": ["B2C", "Complaint", "Refund", "Cancellation Request", "N/A"],
+    "weight": 12.0,
+    "any_blob": [
+      "cancel my subscription",
+      "cancel subscription",
+      "please cancel",
+      "want to cancel",
+      "termination inquiry",
+      "terminate the subscription",
+      "cancel our services",
+      "i want to cancel",
+      "urgent:  i want to cancel"
+    ]
+  }
+]

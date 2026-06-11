@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${K8S_ENV_SLUG}-app-${K8S_PROJECT}
+  namespace: ${K8S_NS}
+  labels:
+    env: ${K8S_ENV_SLUG}
+    app: app
+    project: ${K8S_PROJECT}
+    tier: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  selector:
+    matchLabels:
+      env: ${K8S_ENV_SLUG}
+      app: app
+      project: ${K8S_PROJECT}
+      tier: backend
+  template:
+    metadata:
+      labels:
+        env: ${K8S_ENV_SLUG}
+        app: app
+        project: ${K8S_PROJECT}
+        tier: backend
+      annotations:
+        vault.security.banzaicloud.io/vault-addr: "http://vault.kube-tools.svc.cluster.local:8200"
+        vault.security.banzaicloud.io/vault-path: "kubernetes"
+        vault.security.banzaicloud.io/vault-role: "${K8S_PROJECT}"
+        vault.security.banzaicloud.io/vault-skip-verify: "true"
+    spec:
+      serviceAccountName: ${K8S_PROJECT}
+      imagePullSecrets:
+        - name: registry.scmp.tech
+      volumes:
+        - name: gcp-credentials
+          secret:
+            secretName: editorial-service-account
+            items:
+              - key: credentials.json
+                path: credentials.json
+      containers:
+        - name: ${K8S_ENV_SLUG}-app-${K8S_PROJECT}
+          image: "${CONTAINER_IMAGE}"
+          imagePullPolicy: Always
+          resources:
+            requests: { cpu: "0.2", memory: "0.5Gi" }
+            limits:   { cpu: "0.5", memory: "1.0Gi" }
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DRIVE_UPLOAD_ENABLED
+              value: "true"
+            - name: GOOGLE_DRIVE_RUNS_FOLDER_ID
+              value: "15H0su7yspJnDJCbauglYmjPA1FthVPGI"
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/config/credentials.json"
+            - name: GOOGLE_DRIVE_SUPPORTS_ALL_DRIVES
+              value: "true"
+          volumeMounts:
+            - name: gcp-credentials
+              mountPath: /config
+              readOnly: true

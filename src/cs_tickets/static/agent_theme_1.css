@@ -1,0 +1,27 @@
+/* Base tokens — primary accent matches Anthropic / Claude Code orange (#d97757). */
+
+:root {
+  --background: #f4f0e8;
+  --foreground: #1c1917;
+  --card: #faf8f5;
+  --card-foreground: #1c1917;
+  --primary: #d97757;
+  --primary-hover: #c96b4e;
+  --primary-foreground: #fffbf5;
+  --secondary: #e8e4dc;
+  --muted: #d6d0c4;
+  --muted-foreground: #57534e;
+  --border: #c9c2b5;
+  --radius: 0.75rem;
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.06);
+  --shadow-md: 0 4px 14px rgba(28, 25, 23, 0.1);
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Playfair Display", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

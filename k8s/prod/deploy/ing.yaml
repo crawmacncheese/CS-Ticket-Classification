@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${K8S_ENV_SLUG}-web-${K8S_PROJECT}
+  namespace: ${K8S_NS}
+  labels:
+    env: ${K8S_ENV_SLUG}
+    app: web
+    project: ${K8S_PROJECT}
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # Rewrite /api/* to /* before sending to backend
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - cs-ticket-automation.scmp.work
+      secretName: ing-tls-star-scmp-work
+  rules:
+    - host: cs-ticket-automation.scmp.work
+      http:
+        paths:
+          - backend:  
+              service:
+                name: ${K8S_ENV_SLUG}-app-${K8S_PROJECT}
+                port:
+                  number: 8000
+            path: /
+            pathType: Prefix

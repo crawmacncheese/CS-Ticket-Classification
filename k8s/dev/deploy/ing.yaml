@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/whitelist-source-range: 202.22.242.242/32,202.22.240.65/32,10.0.0.0/8,30.100.0.0/16, 113.28.44.129/32, 47.89.10.247/32, 8.218.103.13/32,47.83.106.173
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+  name: ${K8S_ENV_SLUG}-app-${K8S_PROJECT}
+  namespace: itbs-general
+  labels:
+    env: ${K8S_ENV_SLUG}
+    app: app
+    project: ${K8S_PROJECT}
+    tier: backend
+spec:
+  tls:
+    - hosts:
+        - cs-ticket-automation.itbs-dev.scmp.tech
+      secretName: iing-tls-cs-ticket-automation-${K8S_ENV_SLUG}
+  rules:
+    - host: cs-ticket-automation.itbs-dev.scmp.tech
+      http:
+        paths:
+          - backend:  
+              service:
+                name: ${K8S_ENV_SLUG}-app-${K8S_PROJECT}
+                port:
+                  number: 8000
+            path: /
+            pathType: Prefix

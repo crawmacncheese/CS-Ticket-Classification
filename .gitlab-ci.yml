@@ -1,0 +1,88 @@
+include:
+  - project: 'hub/gitlab/ci-template'
+    file: "job-templates/kaniko-build.yml"
+  - project: "hub/gitlab/ci-template"
+    file: "job-templates/k8s-deploy.yml"
+  - project: 'hub/gitlab/ci-template'
+    file: 'job-templates/security-scanning.yml'
+
+variables:
+  CONTAINER_IMAGE: $CI_REGISTRY_IMAGE/$CI_COMMIT_BRANCH:$CI_COMMIT_SHA
+  K8S_ENV_SLUG: $CI_ENVIRONMENT_SLUG
+  K8S_NS: "itbs-general"
+  K8S_ROOT_DIR: k8s
+  K8S_PROJECT: cs-ticket-automation
+
+stages:
+  - build
+  - image_scanning
+  - repo_scanning
+  - deploy
+
+### Jobs
+
+### frontend
+build:
+  extends: .kaniko-build
+  variables:
+    APP_DIR: .
+  script:
+    - /kaniko/executor --cache=true --cache-repo=$CI_REGISTRY_IMAGE/cache --context $CI_PROJECT_DIR/$APP_DIR --dockerfile $CI_PROJECT_DIR/$APP_DIR/Dockerfile --destination $CONTAINER_IMAGE
+
+###twistcli scanning
+image_scanning:
+  extends: .container-security-scanning-prismacloud
+  stage: image_scanning
+  allow_failure: true
+  needs: [ build ]
+  variables:
+    CS_IMAGE: $CONTAINER_IMAGE
+
+repo_scanning:
+  extends: .prismacloud-repo-scan
+  stage: repo_scanning
+  allow_failure: true
+  needs: [ build ]
+  variables:
+    CS_IMAGE: $CONTAINER_IMAGE
+
+## Deployment templates
+.itbs_dev_vars_tmpl: &itbs_dev_vars_tmpl
+  K8S_API: $ITBS_DEV_K8S_API
+  K8S_CA: $ITBS_DEV_K8S_CA
+  K8S_TKN: $ITBS_GENERAL_DEV_K8S_TKN
+  K8S_DIR: dev
+
+.itbs_prod_vars_tmpl: &itbs_prod_vars_tmpl
+  K8S_API: $ITBS_PROD_K8S_API
+  K8S_CA: $ITBS_PROD_K8S_CA
+  K8S_TKN: $ITBS_GENERAL_PROD_K8S_TKN
+  K8S_DIR: prod
+
+## Deploy section
+.deploy_template: &deploy
+  stage: deploy
+  image: registry.scmp.tech/technology/system/kubectl:latest
+  services: []
+  before_script: [ kubectl-auth ]
+  script:
+    - /bin/sh k8s/deploy.sh
+
+deploy-dev:
+    <<: *deploy
+    rules:
+        - if: '$CI_COMMIT_BRANCH == "dev"'
+    variables:
+      <<: *itbs_dev_vars_tmpl
+    environment:
+        name: dev
+
+deploy-prod:
+    <<: *deploy
+    rules:
+        - if: '$CI_COMMIT_BRANCH == "master"'
+          when: manual
+    variables:
+      <<: *itbs_prod_vars_tmpl
+    environment:
+        name: prod

@@ -1,0 +1,579 @@
+/* CS Tickets portal layout — from .superdesign/design_iterations/cs_tickets_theme.css */
+
+body {
+  display: flex;
+  justify-content: center;
+  background-color: var(--background);
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  padding: 2rem;
+  margin: 0;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+body.upload-page {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.container {
+  width: 100%;
+  max-width: 1200px;
+}
+
+.container.upload-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.page-header {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.meta {
+  color: var(--muted-foreground);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.upload-intro {
+  text-align: center;
+  max-width: 36rem;
+  margin: 0 auto;
+}
+
+.upload-intro .page-header {
+  margin-bottom: 0.5rem;
+}
+
+.upload-intro .meta {
+  margin-bottom: 0;
+}
+
+.upload-card-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.upload-card {
+  width: 100%;
+  max-width: 22rem;
+  background-color: var(--card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem 1.75rem;
+  box-shadow: var(--shadow-md);
+}
+
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+}
+
+.upload-form .filter-option,
+.training-preview-options .filter-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.upload-form .btn {
+  width: 100%;
+  text-align: center;
+}
+
+.btn {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  display: inline-block;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.btn:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.file-input {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}
+
+.run-summary {
+  margin: 0 0 1.25rem;
+  padding: 1rem 1.35rem;
+  background: color-mix(in srgb, var(--secondary) 65%, var(--card) 35%);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.run-summary-lead {
+  font-family: var(--font-serif);
+  font-size: clamp(1.35rem, 2.5vw, 1.85rem);
+  font-weight: 700;
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.run-summary-meta {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.classify-run-summary .run-summary-tbc {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.classify-run-summary .run-summary-tbc-hint {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.classify-run-summary .run-summary-tbc-pct {
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.classify-run-summary .run-summary-split {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.95rem;
+  color: var(--muted-foreground);
+}
+
+.run-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0 0 1.25rem;
+}
+
+.run-actions .btn {
+  margin-right: 0;
+}
+
+.run-filter-note {
+  margin: -0.5rem 0 1rem;
+}
+
+.training-entry-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.training-entry-hint {
+  margin-left: 0.15rem;
+}
+
+.technical-details {
+  margin-top: 2rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--card) 90%, var(--secondary) 10%);
+}
+
+.technical-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.technical-details-body {
+  margin-top: 0.75rem;
+}
+
+.links {
+  margin-bottom: 0.5rem;
+}
+
+.links a {
+  color: var(--primary);
+  font-weight: 500;
+  text-decoration: none;
+  margin-right: 1.5rem;
+}
+
+.links a:hover {
+  text-decoration: underline;
+}
+
+/* Anchor + .btn: .links a alone would set link color to --primary (same as button bg) — invisible label */
+.links a.btn {
+  color: var(--primary-foreground);
+  font-weight: 600;
+  margin-right: 1rem;
+}
+
+.links a.btn.btn-secondary {
+  background-color: var(--secondary);
+  color: var(--foreground);
+}
+
+.links a.btn.btn-secondary:hover {
+  background-color: color-mix(in srgb, var(--secondary) 85%, var(--foreground));
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.links a.btn:hover {
+  color: var(--primary-foreground);
+  text-decoration: none;
+}
+
+.download-hint {
+  display: block;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+  color: var(--muted-foreground);
+}
+
+.section-header {
+  font-family: var(--font-serif);
+  font-size: 1.75rem;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 3px solid var(--primary);
+  padding-bottom: 0.5rem;
+}
+
+.stats-wrap {
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  overflow: auto;
+  max-height: 48vh;
+  background-color: var(--card);
+}
+
+.stats-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 13px;
+  background-color: var(--card);
+}
+
+.stats-table thead th {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--primary) 72%, #1c1917 28%);
+}
+
+.stats-table tbody td {
+  border: 1px solid var(--muted);
+  padding: 9px 12px;
+  vertical-align: middle;
+}
+
+.stats-table tbody tr.zebra-even td {
+  background-color: color-mix(in srgb, var(--secondary) 55%, var(--card) 45%);
+}
+
+.stats-table tbody tr.zebra-odd td {
+  background-color: var(--card);
+}
+
+.stats-table td.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats-table tr.grand-total td {
+  background-color: var(--secondary);
+  font-weight: 700;
+  border-top: 2px solid var(--primary);
+}
+
+.stats-table tr.grand-total td.grand:first-child {
+  text-align: left;
+}
+
+.preview-wrap {
+  margin-top: 1rem;
+  border: 1px solid var(--muted);
+  border-radius: 0.75rem;
+  overflow-x: auto;
+  max-height: 75vh;
+  background: var(--card);
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.preview-table th {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 8px;
+  border-bottom: 2px solid color-mix(in srgb, var(--primary) 70%, #1c1917 30%);
+  font-weight: 600;
+  text-align: left;
+}
+
+.preview-table td {
+  border-bottom: 1px solid var(--muted);
+  padding: 5px 8px;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* README-style docs at bottom of portal (collapsed <details>) */
+.readme-doc {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.readme-doc > .meta {
+  margin-bottom: 1rem;
+}
+
+.readme-details {
+  margin: 0.75rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 0.25rem 0.75rem 0.75rem;
+}
+
+.readme-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--foreground);
+  padding: 0.5rem 0;
+  list-style-position: outside;
+}
+
+.readme-details summary::-webkit-details-marker {
+  color: var(--primary);
+}
+
+.readme-body {
+  margin-top: 0.5rem;
+}
+
+.readme-body .readme-h3 {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+  padding-bottom: 0.25rem;
+  color: var(--foreground);
+  border-bottom: 2px solid color-mix(in srgb, var(--primary) 45%, transparent);
+}
+
+.readme-body .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 0.5rem 0 1rem;
+  overflow-x: auto;
+}
+
+.readme-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin-top: 0.25rem;
+}
+
+.readme-table th,
+.readme-table td {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--muted);
+  vertical-align: top;
+}
+
+.readme-table th {
+  background: color-mix(in srgb, var(--secondary) 85%, transparent);
+  font-weight: 600;
+}
+
+.readme-table code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+/* Training flow */
+.training-page .section-header {
+  margin-top: 2rem;
+}
+
+.training-upload-form,
+.training-preview-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 28rem;
+}
+
+.training-preview-card {
+  max-width: 28rem;
+  width: 100%;
+}
+
+.training-preview-card .training-preview-form {
+  max-width: none;
+}
+
+.training-upload-form .btn-primary,
+.upload-form .btn-primary {
+  width: 100%;
+  text-align: center;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn.btn-loading {
+  opacity: 0.75;
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
+  position: relative;
+  padding-right: 2.25rem;
+}
+
+.btn.btn-loading::after {
+  content: "";
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.5rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.65s linear infinite;
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.training-select-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.training-tuple-table td:first-child,
+.training-tuple-table th:first-child {
+  width: 2rem;
+  text-align: center;
+}
+
+.training-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+.training-stale-banner {
+  background: color-mix(in srgb, var(--destructive, #b91c1c) 12%, var(--card));
+  border: 1px solid color-mix(in srgb, var(--destructive, #b91c1c) 35%, var(--border));
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  color: var(--foreground);
+}
+
+.training-compare-table {
+  margin-top: 0.5rem;
+}
+
+.training-footnote {
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+}
+
+.training-footer {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.training-revert-form {
+  margin-top: 0.75rem;
+}
+
+.btn-secondary {
+  background: var(--secondary);
+  color: var(--secondary-foreground, var(--foreground));
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--secondary) 85%, var(--foreground));
+}
