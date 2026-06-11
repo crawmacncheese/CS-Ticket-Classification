@@ -12,7 +12,6 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from starlette.staticfiles import StaticFiles
 
-from cs_tickets.allowlist_compare import compare_allowlists_on_ndjson
 from cs_tickets.allowlist_training import (
     build_candidate_allowlist,
     build_candidate_rule_set,
@@ -52,12 +51,21 @@ from cs_tickets.portal_copy import (
 )
 from cs_tickets.portal_stats import classify_run_summary_html, tier_stats_table_html
 from cs_tickets.portal_workbook import build_run_workbook_bytes
+from cs_tickets.batch_allowlist_analysis import run_commit_simulation
 from cs_tickets.portal_training import (
+    REVIEW_STEP_HEADING,
+    TRAINING_CANCEL_TITLE,
+    TRAINING_REVERT_TITLE,
+    TRAINING_REVIEW_TITLE,
+    TRAINING_SUCCESS_TITLE,
+    TRAINING_TITLE,
     parse_selected_tuples,
+    review_intro_html,
     training_checklist_html,
     training_footer_html,
     training_page_shell,
     training_preview_section_html,
+    training_upload_body_html,
 )
 from cs_tickets.run_metadata import build_run_metadata, build_workbook_filename
 from cs_tickets.schema import MASTER_COLUMNS
@@ -152,7 +160,7 @@ def index() -> str:
     if training_available(root):
         training_link = f"""
         <p class="links training-entry-link">
-            <a href="/training" class="btn btn-secondary">{TRAINING_LINK_LABEL}</a>
+            <a href="/training" class="btn btn-primary">{TRAINING_LINK_LABEL}</a>
             <span class="meta training-entry-hint">{TRAINING_LINK_HINT}</span>
         </p>"""
     head = _html_head(title=CLASSIFY_PAGE_TITLE)
@@ -358,20 +366,13 @@ def training_index() -> str:
     root = _repo_root()
     if not training_available(root):
         raise HTTPException(status_code=404, detail="Training is not available (doc/ or workbook not writable).")
-    body = f"""
-    <p class="meta">Upload a classified workbook to review new tier combinations and merge accepted ones into the reference allow-list.</p>
-    {training_footer_html(show_revert=has_revertable_snapshot(root))}
-    <h2 class="section-header">Step 1 — Upload classified workbook</h2>
-    <div class="upload-card-wrap">
-        <div class="upload-card">
-            <form action="/training/upload" method="post" enctype="multipart/form-data" class="upload-form training-upload-form" id="training-upload-form" data-loading-form>
-                <input type="file" name="workbook" class="file-input" accept=".xlsx" required>
-                <button type="submit" class="btn btn-primary" id="training-upload-btn" data-loading-btn data-loading-label="Uploading and parsing…">Upload and review</button>
-            </form>
-        </div>
-    </div>
-    """
-    return training_page_shell(title="Allow-list Training", head=_training_head(), body=body)
+    body = training_upload_body_html(show_revert=has_revertable_snapshot(root))
+    return training_page_shell(
+        title=TRAINING_TITLE,
+        head=_training_head(),
+        body=body,
+        wizard_step=1,
+    )
 
 
 @app.post("/training/upload", response_class=HTMLResponse)
@@ -394,18 +395,45 @@ async def training_upload(workbook: UploadFile = File(...)) -> str:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _training_review_page(session, *, selected, preview_result) -> str:
+def _training_review_page(
+    session,
+    *,
+    selected,
+    preview_result,
+    batch_result=None,
+) -> str:
     root = session.repo_root
-    checklist = training_checklist_html(session, selected)
-    preview_block = training_preview_section_html(session, selected, preview_result)
+    tax_path, wb_path = _default_allowlist_paths(root)
+    allow = load_allowlist(tax_path, wb_path)
+    checklist = training_checklist_html(session, selected, allow=allow)
+    preview_block = training_preview_section_html(
+        session,
+        selected,
+        preview_result,
+        batch_result=batch_result,
+    )
+    intro = review_intro_html(len(session.new_tuples)) if session.new_tuples else ""
+    step_heading = f'<h2 class="section-header">{REVIEW_STEP_HEADING}</h2>' if session.new_tuples else ""
+    has_preview = preview_result is not None or batch_result is not None or session.preview_result is not None
+    if not session.new_tuples:
+        wizard_step = 1
+    elif has_preview:
+        wizard_step = 3
+    else:
+        wizard_step = 2
     body = f"""
-    <p class="meta">Found {len(session.new_tuples)} new tier combination(s) not in the current allow-list.</p>
-    <h2 class="section-header">Step 2 — Select combinations to accept</h2>
+    {intro}
+    {step_heading}
     {checklist}
     {preview_block}
     {training_footer_html(show_revert=has_revertable_snapshot(root), show_back=not session.new_tuples)}
     """
-    return training_page_shell(title="Allow-list Training — Review", head=_training_head(), body=body)
+    return training_page_shell(
+        title=TRAINING_REVIEW_TITLE,
+        head=_training_head(),
+        body=body,
+        wizard_step=wizard_step,
+    )
 
 
 @app.post("/training/preview", response_class=HTMLResponse)
@@ -414,6 +442,7 @@ async def training_preview(
     selected_tuple: list[str] = Form(default=[]),
     preview_file: UploadFile = File(...),
     bad_satisfaction_only: bool = Form(False),
+    compute_no_op: bool = Form(False),
 ) -> str:
     root = _repo_root()
     if not training_available(root):
@@ -439,26 +468,34 @@ async def training_preview(
     try:
         preview_path.write_bytes(await preview_file.read())
 
-        meta = {
-            "allowlist_old_size": len(allow_old.tuples),
-            "allowlist_new_size": len(allow_new.tuples),
-            "tuples_merged": merged,
-        }
         rule_specs_new = build_candidate_rule_set(session, selected)
         try:
-            result = compare_allowlists_on_ndjson(
-                preview_path,
+            batch_result = run_commit_simulation(
+                [preview_path],
                 allow_old,
                 allow_new,
-                rule_specs_new=rule_specs_new,
                 selected_tuples=selected,
+                rule_specs_new=rule_specs_new,
+                compute_no_op=compute_no_op,
                 bad_satisfaction_only=bad_satisfaction_only,
-                **meta,
             )
+            result = batch_result.combined
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        store_preview(session, result, selected, bad_satisfaction_only=bad_satisfaction_only)
-        return _training_review_page(session, selected=selected, preview_result=result)
+        store_preview(
+            session,
+            result,
+            selected,
+            bad_satisfaction_only=bad_satisfaction_only,
+            compute_no_op=compute_no_op,
+            batch_result=batch_result,
+        )
+        return _training_review_page(
+            session,
+            selected=selected,
+            preview_result=result,
+            batch_result=batch_result,
+        )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -482,7 +519,12 @@ async def training_commit(
     <p class="links"><a href="/training" class="btn">New training upload</a></p>
     {training_footer_html(show_revert=True)}
     """
-    return training_page_shell(title="Allow-list Training — Success", head=_training_head(), body=body)
+    return training_page_shell(
+        title=TRAINING_SUCCESS_TITLE,
+        head=_training_head(),
+        body=body,
+        wizard_step=3,
+    )
 
 
 @app.post("/training/cancel", response_class=HTMLResponse)
@@ -491,13 +533,14 @@ async def training_cancel(session_id: str = Form(...)) -> str:
     if session:
         drop_session(session)
     return training_page_shell(
-        title="Allow-list Training",
+        title=TRAINING_CANCEL_TITLE,
         head=_training_head(),
         body=f"""
         <p class="meta" role="status">Session cancelled — no changes were made to doc/.</p>
         <p class="links"><a href="/training" class="btn">Start over</a></p>
         {training_footer_html(show_revert=has_revertable_snapshot(_repo_root()))}
         """,
+        wizard_step=1,
     )
 
 
@@ -509,7 +552,7 @@ async def training_revert() -> str:
     if not revert_latest_snapshot(root):
         raise HTTPException(status_code=400, detail="No snapshot available to revert.")
     return training_page_shell(
-        title="Allow-list Training — Reverted",
+        title=TRAINING_REVERT_TITLE,
         head=_training_head(),
         body=f"""
         <p class="run-summary" role="status">Restored doc/ artifacts from the latest Training snapshot.</p>
@@ -517,4 +560,5 @@ async def training_revert() -> str:
         <p class="links"><a href="/training" class="btn">Training home</a></p>
         {training_footer_html(show_revert=has_revertable_snapshot(root))}
         """,
+        wizard_step=1,
     )

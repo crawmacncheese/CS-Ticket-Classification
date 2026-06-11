@@ -49,6 +49,7 @@ class BatchCompareResult:
     duplicate_ticket_ids: list[str]
     verdict_band: str
     verdict_reasons: list[str]
+    selection_no_op_tuples: frozenset[FiveTuple] | None = None
 
 
 @dataclass(frozen=True)
@@ -186,6 +187,7 @@ def _sum_compare_results(
             below_threshold_new=sum(r.below_threshold_new for r in per_file.values()),
             rules_targeting_selected_old=first.rules_targeting_selected_old,
             rules_targeting_selected_new=first.rules_targeting_selected_new,
+            bad_satisfaction_only=first.bad_satisfaction_only,
         ),
         duplicate_ids,
     )
@@ -237,8 +239,27 @@ def compute_selection_no_op_count(
     limit: int | None = None,
     enrich_changed_rows: bool = False,
 ) -> int:
-    return sum(
-        1
+    return len(
+        compute_selection_no_op_tuples(
+            ndjson_paths,
+            allow_old,
+            selected,
+            limit=limit,
+            enrich_changed_rows=enrich_changed_rows,
+        )
+    )
+
+
+def compute_selection_no_op_tuples(
+    ndjson_paths: list[Path],
+    allow_old: AllowList,
+    selected: frozenset[FiveTuple],
+    *,
+    limit: int | None = None,
+    enrich_changed_rows: bool = False,
+) -> frozenset[FiveTuple]:
+    return frozenset(
+        t
         for t in selected
         if _is_tuple_no_op(
             ndjson_paths,
@@ -298,6 +319,7 @@ def run_commit_simulation(
     limit: int | None = None,
     enrich_changed_rows: bool = True,
     compute_no_op: bool = False,
+    bad_satisfaction_only: bool = False,
 ) -> BatchCompareResult:
     allowlist_old_size = len(allow_old.tuples)
     allowlist_new_size = len(allow_new.tuples)
@@ -316,6 +338,7 @@ def run_commit_simulation(
             rule_specs_new=rule_specs_new,
             selected_tuples=selected_tuples,
             enrich_changed_rows=enrich_changed_rows,
+            bad_satisfaction_only=bad_satisfaction_only,
         )
 
     combined, duplicate_ids = _sum_compare_results(per_file, selected_tuples=selected_tuples)
@@ -324,17 +347,17 @@ def run_commit_simulation(
         selected_tuples,
         rule_specs_new=rule_specs_new,
     )
-    selection_no_op_count = (
-        compute_selection_no_op_count(
+    selection_no_op_tuples: frozenset[FiveTuple] | None = None
+    selection_no_op_count: int | None = None
+    if compute_no_op:
+        selection_no_op_tuples = compute_selection_no_op_tuples(
             ndjson_paths,
             allow_old,
             selected_tuples,
             limit=limit,
             enrich_changed_rows=enrich_changed_rows,
         )
-        if compute_no_op
-        else None
-    )
+        selection_no_op_count = len(selection_no_op_tuples)
 
     partial = BatchCompareResult(
         per_file=per_file,
@@ -344,6 +367,7 @@ def run_commit_simulation(
         gap_fix_by_mechanism=gap_fix_by_mechanism,
         tuples_with_rules_count=tuples_with_rules,
         selection_no_op_count=selection_no_op_count,
+        selection_no_op_tuples=selection_no_op_tuples,
         duplicate_ticket_ids=duplicate_ids,
         verdict_band="review",
         verdict_reasons=[],
@@ -357,6 +381,7 @@ def run_commit_simulation(
         gap_fix_by_mechanism=gap_fix_by_mechanism,
         tuples_with_rules_count=tuples_with_rules,
         selection_no_op_count=selection_no_op_count,
+        selection_no_op_tuples=selection_no_op_tuples,
         duplicate_ticket_ids=duplicate_ids,
         verdict_band=band,
         verdict_reasons=reasons,
@@ -553,7 +578,8 @@ def apply_ablation_no_op_to_result(
     result: BatchCompareResult,
     ablation: list[TupleAblationResult],
 ) -> BatchCompareResult:
-    no_op_count = sum(1 for row in ablation if row.no_op)
+    no_op_tuples = frozenset(row.five_tuple for row in ablation if row.no_op)
+    no_op_count = len(no_op_tuples)
     partial = BatchCompareResult(
         per_file=result.per_file,
         combined=result.combined,
@@ -562,6 +588,7 @@ def apply_ablation_no_op_to_result(
         gap_fix_by_mechanism=result.gap_fix_by_mechanism,
         tuples_with_rules_count=result.tuples_with_rules_count,
         selection_no_op_count=no_op_count,
+        selection_no_op_tuples=no_op_tuples,
         duplicate_ticket_ids=result.duplicate_ticket_ids,
         verdict_band=result.verdict_band,
         verdict_reasons=result.verdict_reasons,
@@ -575,6 +602,7 @@ def apply_ablation_no_op_to_result(
         gap_fix_by_mechanism=result.gap_fix_by_mechanism,
         tuples_with_rules_count=result.tuples_with_rules_count,
         selection_no_op_count=no_op_count,
+        selection_no_op_tuples=no_op_tuples,
         duplicate_ticket_ids=result.duplicate_ticket_ids,
         verdict_band=band,
         verdict_reasons=reasons,

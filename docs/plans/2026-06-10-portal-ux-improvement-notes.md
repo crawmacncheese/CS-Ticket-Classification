@@ -29,6 +29,6 @@ pytest tests/test_portal.py tests/test_portal_stats.py -q
 pytest -q
 ```
 
-## Not in this pass
+## Phase 2 (Training)
 
-Phase 2 (Training wizard + verdict banner) — see [2026-06-10-training-ux-wizard-and-impact-preview.md](./2026-06-10-training-ux-wizard-and-impact-preview.md).
+Shipped separately — see [2026-06-10-training-ux-wizard-and-impact-preview-notes.md](./2026-06-10-training-ux-wizard-and-impact-preview-notes.md) for wizard, verdict banner, plain-language copy, and the preview performance / optional no-op follow-up.

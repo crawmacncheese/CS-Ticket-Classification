@@ -173,6 +173,8 @@ def test_training_upload_page(repo_root: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr("cs_tickets.portal_app.training_available", lambda _root: True)
     r = client.get("/training")
     assert r.status_code == 200
+    assert "Update categories" in r.text
+    assert "training-wizard" in r.text
     assert "Upload classified workbook" in r.text
 
 
@@ -270,11 +272,19 @@ def test_training_preview_uses_candidate_allowlist_without_commit(
         },
     )
     assert preview_r.status_code == 200, preview_r.text[:500]
-    assert "Allow-list tuples (pending commit)" in preview_r.text
-    assert "B2B TBC count" in preview_r.text
-    assert "B2C TBC count" in preview_r.text
-    assert re.search(r"Allow-list tuples \(pending commit\)</td><td>\d+</td><td>\d+</td><td>\+\d+</td>", preview_r.text)
+    assert "training-wizard" in preview_r.text
+    assert "verdict-banner" in preview_r.text
+    assert "Reference categories (pending save)" in preview_r.text
+    assert "B2B manual review (TBC)" in preview_r.text
+    assert "B2C manual review (TBC)" in preview_r.text
+    assert re.search(
+        r"Reference categories \(pending save\)</td><td>\d+</td><td>\d+</td><td>\+\d+</td>",
+        preview_r.text,
+    )
+    assert "Category path" in preview_r.text
     assert "Only preview tickets with bad CSAT rating" in preview_r.text
+    assert "Check which categories have no impact" in preview_r.text
+    assert 'name="compute_no_op"' in preview_r.text
 
     allow_after_disk = load_allowlist(tax, ref)
     assert novel not in allow_after_disk
@@ -358,7 +368,7 @@ def test_training_preview_bad_satisfaction_only(
     )
     assert preview_r.status_code == 200, preview_r.text[:500]
     assert "Preview limited to tickets with bad CSAT rating" in preview_r.text
-    assert re.search(r"Total rows</td><td>1</td><td>1</td>", preview_r.text)
+    assert re.search(r"Total tickets</td><td>1</td><td>1</td>", preview_r.text)
 
     session = get_session(session_id)
     assert session is not None
@@ -427,7 +437,7 @@ def test_training_commit_without_preview_file(
         data={"session_id": session_id, "selected_tuple": [encoded]},
     )
     assert commit_r.status_code == 200, commit_r.text[:500]
-    assert "Added 1 category" in commit_r.text
+    assert "Saved 1 category" in commit_r.text
 
     allow_after = load_allowlist(doc / "Taxonomy.csv", doc / "CS_ticket_new_categorizations.xlsx")
     assert novel in allow_after
@@ -480,9 +490,9 @@ def test_training_no_new_tuples_shows_done_and_back(
         },
     )
     assert upload_r.status_code == 200
-    assert "No new tier combinations found" in upload_r.text
+    assert "No new categories found" in upload_r.text
     assert 'formaction="/training/cancel"' in upload_r.text
-    assert "Back to classify" in upload_r.text
+    assert "Back to categorize" in upload_r.text
     assert "training-preview-form" not in upload_r.text
 
     m = re.search(r'name="session_id" value="([^"]+)"', upload_r.text)

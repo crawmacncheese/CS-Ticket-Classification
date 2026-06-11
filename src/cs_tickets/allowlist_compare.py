@@ -742,7 +742,12 @@ def compare_allowlists_on_workbook(
 
 
 
-def compare_result_html(result: AllowlistCompareResult, *, stale: bool = False) -> str:
+def compare_result_html(
+    result: AllowlistCompareResult,
+    *,
+    stale: bool = False,
+    plain_language: bool = False,
+) -> str:
 
     if stale:
 
@@ -776,35 +781,132 @@ def compare_result_html(result: AllowlistCompareResult, *, stale: bool = False) 
 
 
 
-    rows = [
-
-        ("Allow-list tuples (pending commit)", str(result.allowlist_old_size), str(result.allowlist_new_size), delta(result.allowlist_new_size, result.allowlist_old_size)),
-
-        ("Exemplar rows in candidate workbook", "—", str(result.tuples_merged), ""),
-
-        ("Rules targeting selected tuples", str(result.rules_targeting_selected_old), str(result.rules_targeting_selected_new), delta(result.rules_targeting_selected_new, result.rules_targeting_selected_old)),
-
-        ("Total rows", str(result.total), str(result.total), "0"),
-
-        ("B2B TBC count", str(result.tbc_b2b_old), str(result.tbc_b2b_new), delta(result.tbc_b2b_new, result.tbc_b2b_old)),
-
-        ("B2B TBC %", pct(result.tbc_b2b_old), pct(result.tbc_b2b_new), ""),
-
-        ("B2C TBC count", str(result.tbc_b2c_old), str(result.tbc_b2c_new), delta(result.tbc_b2c_new, result.tbc_b2c_old)),
-
-        ("B2C TBC %", pct(result.tbc_b2c_old), pct(result.tbc_b2c_new), ""),
-
-        ("TBC count (combined, audit-style)", str(result.tbc_old), str(result.tbc_new), delta(result.tbc_new, result.tbc_old)),
-
-        ("TBC % (combined)", pct(result.tbc_old), pct(result.tbc_new), ""),
-
-        ("Zero-candidate rows", str(result.zero_candidate_old), str(result.zero_candidate_new), delta(result.zero_candidate_new, result.zero_candidate_old)),
-
-        ("Margin-loss TBC", str(result.margin_loss_old), str(result.margin_loss_new), delta(result.margin_loss_new, result.margin_loss_old)),
-
-        ("Below-threshold TBC", str(result.below_threshold_old), str(result.below_threshold_new), delta(result.below_threshold_new, result.below_threshold_old)),
-
-    ]
+    if plain_language:
+        rows = [
+            (
+                "Reference categories (pending save)",
+                str(result.allowlist_old_size),
+                str(result.allowlist_new_size),
+                delta(result.allowlist_new_size, result.allowlist_old_size),
+            ),
+            ("Example rows in candidate workbook", "—", str(result.tuples_merged), ""),
+            (
+                "Rules targeting selected categories",
+                str(result.rules_targeting_selected_old),
+                str(result.rules_targeting_selected_new),
+                delta(result.rules_targeting_selected_new, result.rules_targeting_selected_old),
+            ),
+            ("Total tickets", str(result.total), str(result.total), "0"),
+            (
+                "B2B manual review (TBC)",
+                str(result.tbc_b2b_old),
+                str(result.tbc_b2b_new),
+                delta(result.tbc_b2b_new, result.tbc_b2b_old),
+            ),
+            ("B2B manual review %", pct(result.tbc_b2b_old), pct(result.tbc_b2b_new), ""),
+            (
+                "B2C manual review (TBC)",
+                str(result.tbc_b2c_old),
+                str(result.tbc_b2c_new),
+                delta(result.tbc_b2c_new, result.tbc_b2c_old),
+            ),
+            ("B2C manual review %", pct(result.tbc_b2c_old), pct(result.tbc_b2c_new), ""),
+            (
+                "Manual review (TBC) combined",
+                str(result.tbc_old),
+                str(result.tbc_new),
+                delta(result.tbc_new, result.tbc_old),
+            ),
+            ("Manual review %", pct(result.tbc_old), pct(result.tbc_new), ""),
+            (
+                "Zero-candidate tickets",
+                str(result.zero_candidate_old),
+                str(result.zero_candidate_new),
+                delta(result.zero_candidate_new, result.zero_candidate_old),
+            ),
+            (
+                "Margin-loss manual review",
+                str(result.margin_loss_old),
+                str(result.margin_loss_new),
+                delta(result.margin_loss_new, result.margin_loss_old),
+            ),
+            (
+                "Below-threshold manual review",
+                str(result.below_threshold_old),
+                str(result.below_threshold_new),
+                delta(result.below_threshold_new, result.below_threshold_old),
+            ),
+        ]
+        col_old, col_new = "Current", "With your selection"
+        footnote = (
+            '&ldquo;With your selection&rdquo; simulates categories and matching rules for your choices — '
+            "<code>doc/</code> is unchanged until you save. "
+            "Manual review (TBC) matches the audit classifier definition."
+        )
+    else:
+        rows = [
+            (
+                "Allow-list tuples (pending commit)",
+                str(result.allowlist_old_size),
+                str(result.allowlist_new_size),
+                delta(result.allowlist_new_size, result.allowlist_old_size),
+            ),
+            ("Exemplar rows in candidate workbook", "—", str(result.tuples_merged), ""),
+            (
+                "Rules targeting selected tuples",
+                str(result.rules_targeting_selected_old),
+                str(result.rules_targeting_selected_new),
+                delta(result.rules_targeting_selected_new, result.rules_targeting_selected_old),
+            ),
+            ("Total rows", str(result.total), str(result.total), "0"),
+            (
+                "B2B TBC count",
+                str(result.tbc_b2b_old),
+                str(result.tbc_b2b_new),
+                delta(result.tbc_b2b_new, result.tbc_b2b_old),
+            ),
+            ("B2B TBC %", pct(result.tbc_b2b_old), pct(result.tbc_b2b_new), ""),
+            (
+                "B2C TBC count",
+                str(result.tbc_b2c_old),
+                str(result.tbc_b2c_new),
+                delta(result.tbc_b2c_new, result.tbc_b2c_old),
+            ),
+            ("B2C TBC %", pct(result.tbc_b2c_old), pct(result.tbc_b2c_new), ""),
+            (
+                "TBC count (combined, audit-style)",
+                str(result.tbc_old),
+                str(result.tbc_new),
+                delta(result.tbc_new, result.tbc_old),
+            ),
+            ("TBC % (combined)", pct(result.tbc_old), pct(result.tbc_new), ""),
+            (
+                "Zero-candidate rows",
+                str(result.zero_candidate_old),
+                str(result.zero_candidate_new),
+                delta(result.zero_candidate_new, result.zero_candidate_old),
+            ),
+            (
+                "Margin-loss TBC",
+                str(result.margin_loss_old),
+                str(result.margin_loss_new),
+                delta(result.margin_loss_new, result.margin_loss_old),
+            ),
+            (
+                "Below-threshold TBC",
+                str(result.below_threshold_old),
+                str(result.below_threshold_new),
+                delta(result.below_threshold_new, result.below_threshold_old),
+            ),
+        ]
+        col_old, col_new = "Old allow-list", "New allow-list"
+        footnote = (
+            'The &ldquo;New allow-list&rdquo; column uses a candidate workbook in your session only — '
+            "<code>doc/</code> is unchanged until Commit. Preview includes proposed routing rules "
+            "for selected categories. B2B and B2C TBC are split by <code>Tier1_Segment</code>. "
+            "Combined TBC matches <code>tools/audit_classifier.py</code> (fallback or Tier4 contains "
+            "&ldquo;tbc&rdquo;), not the portal download metadata sheet."
+        )
 
     body = ""
 
@@ -816,7 +918,7 @@ def compare_result_html(result: AllowlistCompareResult, *, stale: bool = False) 
 
     sample = ""
 
-    if result.changed_rows:
+    if result.changed_rows and not plain_language:
 
         sample_rows = result.changed_rows[:20]
 
@@ -850,13 +952,13 @@ def compare_result_html(result: AllowlistCompareResult, *, stale: bool = False) 
 
         <table class="stats-table training-compare-table">
 
-            <thead><tr><th>Metric</th><th>Old allow-list</th><th>New allow-list</th><th>Delta</th></tr></thead>
+            <thead><tr><th>Metric</th><th>{col_old}</th><th>{col_new}</th><th>Delta</th></tr></thead>
 
             <tbody>{body}</tbody>
 
         </table>
 
-        <p class="meta training-footnote">The &ldquo;New allow-list&rdquo; column uses a candidate workbook in your session only — <code>doc/</code> is unchanged until Commit. Preview includes proposed routing rules for selected categories. B2B and B2C TBC are split by <code>Tier1_Segment</code>. Combined TBC matches <code>tools/audit_classifier.py</code> (fallback or Tier4 contains &ldquo;tbc&rdquo;), not the portal download metadata sheet.</p>
+        <p class="meta training-footnote">{footnote}</p>
 
         {sample}
 

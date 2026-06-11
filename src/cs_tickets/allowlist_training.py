@@ -7,6 +7,7 @@ import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from cs_tickets.allowlist_compare import AllowlistCompareResult
 from cs_tickets.classifier_rules import RuleSpec, load_rule_specs, reload_rule_specs
@@ -43,8 +44,13 @@ class _TrainingSession:
     selected_tuples: frozenset[tuple[str, str, str, str, str]] = field(default_factory=frozenset)
     ticket_counts: dict[tuple[str, str, str, str, str], int] = field(default_factory=dict)
     preview_result: AllowlistCompareResult | None = None
+    preview_batch_result: Any | None = None
+    preview_no_op_tuples: frozenset[tuple[str, str, str, str, str]] = field(
+        default_factory=frozenset
+    )
     preview_selection_hash: str | None = None
     preview_bad_satisfaction_only: bool = False
+    preview_compute_no_op: bool = False
     repo_root: Path = field(default_factory=Path.cwd)
 
 
@@ -305,10 +311,16 @@ def store_preview(
     selected: frozenset[tuple[str, str, str, str, str]],
     *,
     bad_satisfaction_only: bool = False,
+    compute_no_op: bool = False,
+    batch_result: Any | None = None,
 ) -> None:
     session.preview_result = result
+    session.preview_batch_result = batch_result
+    no_op_tuples = getattr(batch_result, "selection_no_op_tuples", None) if batch_result else None
+    session.preview_no_op_tuples = no_op_tuples or frozenset()
     session.preview_selection_hash = selection_hash(selected)
     session.preview_bad_satisfaction_only = bad_satisfaction_only
+    session.preview_compute_no_op = compute_no_op
     session.selected_tuples = selected
 
 
@@ -320,10 +332,10 @@ def preview_is_stale(session: _TrainingSession, selected: frozenset[tuple[str, s
 
 def commit_success_message(result: CommitResult) -> str:
     parts = [
-        f"Added {result.rows_added} categor{'y' if result.rows_added == 1 else 'ies'}",
+        f"Saved {result.rows_added} categor{'y' if result.rows_added == 1 else 'ies'}",
         f"{result.rules_added} matching rule{'s' if result.rules_added != 1 else ''}",
     ]
-    msg = " and ".join(parts) + " to doc/."
+    msg = " and ".join(parts) + " to the reference workbook."
     if result.rules_skipped:
-        msg += f" ({result.rules_skipped} skipped — already routable or no exemplar row)."
+        msg += f" ({result.rules_skipped} skipped — already routable or no example row)."
     return msg
