@@ -91,7 +91,11 @@ The classifier sums weights by 5-tuple, picks the highest score, and accepts it 
 | `src/cs_tickets/portal_app.py` | FastAPI upload, tier stats HTML, **`portal_workbook`** `.xlsx` download. |
 | `src/cs_tickets/portal_stats.py` | Pivot-style tier counts for UI + tier sheet in workbook. |
 | `src/cs_tickets/portal_workbook.py` | **openpyxl** workbook: **Tickets** + **Tier breakdown** sheets. |
+| `src/cs_tickets/tbc_trends.py` | TBC trend snapshots (SQLite), subject clustering, rollups. |
+| `src/cs_tickets/portal_trends.py` | Portal **TBC trends dashboard** HTML (`GET /dashboard`). |
 | `tools/audit_classifier.py` | Local audit helper for TBC rate, top fallback signals, scored tuples, and unreachable allow-list tuples. |
+| `tools/tbc_trend_snapshot.py` | Classify NDJSON exports → append trends SQLite DB. |
+| `tools/tbc_trend_report.py` | DB → `summary.md` + rollup CSVs. |
 | `tests/` | `pytest` coverage for flatten, taxonomy, pipeline, classify, portal. |
 
 ---
@@ -142,6 +146,19 @@ uvicorn cs_tickets.portal_app:app --reload --port 8777
 ```
 
 Open http://127.0.0.1:8777 — upload NDJSON; the result page shows a **pivot-style tier breakdown** and ticket preview. Optional checkbox **Only categorize tickets with bad CSAT rating** limits the run to tickets whose Zendesk export has `satisfaction_rating.score == "bad"`. **Download** is an **`.xlsx`** with sheets **Run metadata**, **Tickets**, and **Tier breakdown** (when the filter is used, Run metadata records `filter = bad_satisfaction_only`). Static theme CSS is served from `/static/`.
+
+**TBC trends dashboard** (`/dashboard`): weekly manual-review rate, tag/subject hotspots, and reason mix from a SQLite snapshot DB. Ingest via CLI or enable auto-snapshot on upload:
+
+```bash
+# Batch ingest
+python tools/tbc_trend_snapshot.py --ndjson-dir data/
+python tools/tbc_trend_report.py --output-dir reports/tbc-trends/
+
+# Optional: append each portal upload to the trends DB
+export TBC_TRENDS_ENABLED=true
+```
+
+See `docs/plans/2026-06-11-tbc-trend-dashboard.md` and implementation notes in `docs/plans/2026-06-11-tbc-trend-dashboard-notes.md`.
 
 When `doc/` and the reference workbook are writable (local dev), the index page also links to **Training (update allow-list)** — see below.
 

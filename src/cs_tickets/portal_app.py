@@ -50,6 +50,19 @@ from cs_tickets.portal_copy import (
     TRAINING_LINK_LABEL,
 )
 from cs_tickets.portal_stats import classify_run_summary_html, tier_stats_table_html
+from cs_tickets.portal_trends import (
+    DASHBOARD_TITLE,
+    dashboard_body_html,
+    dashboard_empty_html,
+    dashboard_page_html,
+)
+from cs_tickets.tbc_trends import (
+    init_db,
+    load_trend_events,
+    trends_db_path,
+    trends_events_path,
+    try_append_portal_snapshot,
+)
 from cs_tickets.portal_workbook import build_run_workbook_bytes
 from cs_tickets.batch_allowlist_analysis import run_commit_simulation
 from cs_tickets.portal_training import (
@@ -163,6 +176,10 @@ def index() -> str:
             <a href="/training" class="btn btn-primary">{TRAINING_LINK_LABEL}</a>
             <span class="meta training-entry-hint">{TRAINING_LINK_HINT}</span>
         </p>"""
+    trends_link = """
+        <p class="links trends-entry-link">
+            <a href="/dashboard" class="btn btn-secondary">TBC trends dashboard</a>
+        </p>"""
     head = _html_head(title=CLASSIFY_PAGE_TITLE)
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -175,7 +192,6 @@ def index() -> str:
         <h1 class="page-header">{CLASSIFY_PAGE_TITLE}</h1>
         <p class="meta">{CLASSIFY_PAGE_INTRO}</p>
     </div>
-    {training_link}
     <div class="upload-card-wrap">
         <div class="upload-card">
             <form class="upload-form" action="/run" method="post" enctype="multipart/form-data" data-loading-form>
@@ -188,6 +204,8 @@ def index() -> str:
             </form>
         </div>
     </div>
+    {training_link}
+    {trends_link}
     {_classify_technical_details_html()}
 </div>
 </body></html>"""
@@ -237,6 +255,13 @@ async def run_upload(
             workbook_bytes,
             filename=workbook_filename,
         )
+        trends_snapshot = try_append_portal_snapshot(
+            tmp_path,
+            allow,
+            repo_root=_repo_root(),
+            source_filename=source_filename,
+            bad_satisfaction_only=bad_satisfaction_only,
+        )
         _RUNS[run_id] = _RunRecord(
             rows=rows,
             source_filename=source_filename,
@@ -256,6 +281,15 @@ async def run_upload(
         if bad_satisfaction_only:
             filter_note = '<p class="meta run-filter-note">This run included only tickets with a bad CSAT rating.</p>'
         summary_block = classify_run_summary_html(rows, warns=warns)
+        trends_html = ""
+        if trends_snapshot is not None:
+            snap_rows, snap_tbc = trends_snapshot
+            snap_pct = f"{100.0 * snap_tbc / snap_rows:.1f}%" if snap_rows else "0.0%"
+            trends_html = (
+                f'<p class="meta trends-snapshot-ok">'
+                f"Added to <a href=\"/dashboard\">TBC trends</a>: "
+                f"{snap_rows} tickets ({snap_tbc} manual review, {snap_pct}).</p>"
+            )
         run_actions = _classify_run_actions_html(run_id, primary=True)
         head = _html_head(title="Categorization results")
         return f"""<!DOCTYPE html>
@@ -265,6 +299,7 @@ async def run_upload(
 <div class="container">
     {summary_block}
     {filter_note}
+    {trends_html}
     {run_actions}
     {drive_html}
     <p class="download-hint meta">Workbook includes sheets <strong>Run metadata</strong>, <strong>Tickets</strong> (full rows), and <strong>Tier breakdown</strong> (category counts).</p>
@@ -272,8 +307,6 @@ async def run_upload(
     <h2 class="section-header">{CATEGORY_BREAKDOWN_HEADING}</h2>
     <p class="meta">{CATEGORY_BREAKDOWN_META}</p>
     <div class="stats-wrap">{stats_block}</div>
-
-    {_classify_run_actions_html(run_id, primary=True)}
 
     <h2 class="section-header">{TICKET_PREVIEW_HEADING}</h2>
     <p class="meta">First {len(preview)} rows of the master table.</p>
@@ -342,6 +375,23 @@ def download(run_id: str) -> Response:
 @app.get("/health")
 def health() -> PlainTextResponse:
     return PlainTextResponse("ok")
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard() -> str:
+    root = _repo_root()
+    db_path = trends_db_path(root)
+    head = _html_head(title=DASHBOARD_TITLE)
+    if not db_path.is_file():
+        body = dashboard_empty_html(db_path=db_path, repo_root=root)
+        return dashboard_page_html(head=head, body=body)
+    conn = init_db(db_path)
+    try:
+        events = load_trend_events(trends_events_path(root))
+        body = dashboard_body_html(conn, db_path=db_path, events=events)
+    finally:
+        conn.close()
+    return dashboard_page_html(head=head, body=body)
 
 
 def _training_head() -> str:

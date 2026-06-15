@@ -65,7 +65,8 @@ flowchart LR
 | **Orchestration** | `pipeline.py` | `iter_master_rows(ndjson, allow, bad_satisfaction_only=…)` |
 | **CSAT filter** | `satisfaction.py` | Parse Zendesk `satisfaction_rating`; `has_bad_satisfaction_rating()` |
 | **CLI** | `cli.py`, `__main__.py` | Typer entry `cs-tickets-pipeline` |
-| **Portal** | `portal_app.py`, `portal_stats.py`, `portal_workbook.py` | HTTP upload, HTML stats, openpyxl XLSX |
+| **Portal** | `portal_app.py`, `portal_stats.py`, `portal_workbook.py`, `portal_trends.py` | HTTP upload, HTML stats, openpyxl XLSX, TBC trends dashboard |
+| **TBC trends** | `tbc_trends.py`, `tools/tbc_trend_snapshot.py`, `tools/tbc_trend_report.py` | SQLite snapshots, rollups, portal read model |
 | **Tooling** | `tools/audit_classifier.py` | Offline TBC / unreachable-tier reports |
 | **Tests** | `tests/*` | Unit and integration coverage |
 
@@ -212,6 +213,7 @@ Training preview also reports margin-loss and below-threshold counts per allow-l
 | GET | `/` | Upload form + collapsed documentation |
 | POST | `/run` | Multipart NDJSON → in-memory run store → result HTML; optional `bad_satisfaction_only` checkbox |
 | GET | `/download/{run_id}` | XLSX attachment |
+| GET | `/dashboard` | TBC trend dashboard (SQLite rollups); empty state when DB missing |
 | GET | `/health` | `ok` for probes |
 | GET | `/static/*` | Theme CSS |
 
@@ -229,6 +231,15 @@ Training preview also reports margin-loss and below-threshold counts per allow-l
 ### 6.4 Documentation in UI
 
 Footer HTML is **embedded in `portal_app.py`** (mirrors README sections: pipeline Mermaid, allow-list, scoring, module table). Update both when changing operator-facing docs.
+
+### 6.5 TBC trends dashboard
+
+Plan: [plans/2026-06-11-tbc-trend-dashboard.md](./plans/2026-06-11-tbc-trend-dashboard.md). Implementation notes (design rationale): [plans/2026-06-11-tbc-trend-dashboard-notes.md](./plans/2026-06-11-tbc-trend-dashboard-notes.md).
+
+- **Ingest:** `tools/tbc_trend_snapshot.py` classifies NDJSON and appends to SQLite (`reports/tbc_trends/tbc_trends.db` by default). Optional: `TBC_TRENDS_ENABLED=1` snapshots each portal `POST /run` via `tbc_trends.try_append_portal_snapshot` (failures logged, upload unaffected).
+- **Read:** `GET /dashboard` opens the DB read-only through `portal_trends.dashboard_body_html` — weekly TBC %, top tags, subject clusters, reason mix, snapshot list. CSS bar sparklines; no chart library.
+- **Timeline:** optional `reports/tbc_trends/events.json` (`TBC_TRENDS_EVENTS_PATH`) for rule-batch markers.
+- **Env:** `TBC_TRENDS_DB_PATH`, `TBC_TRENDS_ENABLED`, `TBC_TRENDS_EVENTS_PATH`.
 
 ---
 

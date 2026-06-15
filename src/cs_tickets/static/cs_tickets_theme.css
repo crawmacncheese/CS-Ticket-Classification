@@ -315,6 +315,72 @@ body.upload-page {
   vertical-align: middle;
 }
 
+.trends-page .page-header {
+  margin-bottom: 0.35rem;
+}
+
+.trends-nav {
+  margin-bottom: 1.5rem;
+}
+
+.trends-generated {
+  margin-top: 0;
+}
+
+.trends-auto-note,
+.trends-snapshot-ok {
+  margin: 0.5rem 0 1rem;
+}
+
+.trends-entry-link {
+  display: flex;
+  justify-content: center;
+  margin: 0.75rem auto 0;
+  max-width: 22rem;
+}
+
+.trends-entry-link .btn {
+  width: 100%;
+  text-align: center;
+}
+
+.trends-headline {
+  margin-bottom: 1.5rem;
+}
+
+.trends-table .trend-bar-cell {
+  min-width: 8rem;
+  width: 20%;
+}
+
+.trend-bar {
+  display: block;
+  height: 0.65rem;
+  border-radius: 0.25rem;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--primary) 85%, #fff 15%),
+    var(--primary)
+  );
+}
+
+.cluster-sample {
+  font-size: 0.85rem;
+  color: var(--muted-foreground);
+  max-width: 22rem;
+}
+
+.trend-events {
+  margin: 0 0 1.5rem;
+  padding-left: 1.25rem;
+  line-height: 1.6;
+}
+
+.trend-events time {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
 .stats-table tbody tr.zebra-even td {
   background-color: color-mix(in srgb, var(--secondary) 55%, var(--card) 45%);
 }
