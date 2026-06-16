@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from cs_tickets.portal_layout import portal_page_html
 from cs_tickets.tbc_trends import (
     DashboardSnapshot,
     TrendEvent,
@@ -275,26 +276,22 @@ def dashboard_empty_html(*, db_path: Path, repo_root: Path) -> str:
 <p class="meta">No trend database at <code>{_h(db_path)}</code> yet.</p>
 {snapshot_hint}
 <p class="meta">Optional milestones file: <code>{_h(events_path)}</code></p>
-<p class="links"><a href="/" class="btn btn-secondary">Classify tickets</a></p>
 """.strip()
 
 
 def dashboard_page_html(
     *,
-    head: str,
     body: str,
     title: str = DASHBOARD_TITLE,
 ) -> str:
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>{head}</head>
-<body>
-<div class="container trends-page">
+    page_body = f"""
     <h1 class="page-header">{_h(title)}</h1>
     <p class="meta">{DASHBOARD_INTRO}</p>
-    <p class="links trends-nav">
-        <a href="/" class="btn btn-secondary">Classify tickets</a>
-    </p>
     {body}
-</div>
-</body></html>"""
+    """
+    return portal_page_html(
+        title=title,
+        active="dashboard",
+        body_class="trends-page",
+        body=page_body,
+    )

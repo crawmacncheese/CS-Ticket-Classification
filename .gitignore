@@ -42,6 +42,10 @@ reports/*
 # Training portal snapshots (session-local)
 doc/.snapshots/
 
+# Runtime live config cache (bootstrapped from doc/ or synced from Drive)
+runs/
+!runs/.gitkeep
+
 # Local scratch in doc/ (committed: Taxonomy.csv, CS_ticket_new_categorizations.xlsx, training_rules.json)
 doc/*.docx
 doc/*.png

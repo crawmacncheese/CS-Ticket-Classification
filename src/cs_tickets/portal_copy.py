@@ -13,6 +13,18 @@ CLASSIFY_BAD_CSAT_LABEL = "Only categorize tickets with bad CSAT rating"
 TRAINING_LINK_LABEL = "Update reference categories"
 TRAINING_LINK_HINT = "Upload a classified workbook to add new categories to the reference list."
 
+NAV_CATEGORIZE = "Categorize tickets"
+NAV_REFERENCE_CATEGORIES = TRAINING_LINK_LABEL
+NAV_TBC_TRENDS = "TBC trends"
+NAV_RUN_HISTORY = "Run history"
+
+REFERENCE_CATEGORIES_PAGE_TITLE = TRAINING_LINK_LABEL
+REFERENCE_CATEGORIES_PAGE_INTRO = (
+    "Upload a CS categorized master workbook (<code>SCMP_Tickets_Master_Categorized</code>). "
+    "Process parses labeled rows and proposes rules and category paths. "
+    "Nothing goes live until you confirm."
+)
+
 CATEGORY_BREAKDOWN_HEADING = "Category breakdown"
 CATEGORY_BREAKDOWN_META = "Counts by category path (Tier1–Tier4) for this run."
 TICKET_PREVIEW_HEADING = "Ticket preview"

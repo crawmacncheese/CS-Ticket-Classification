@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from cs_tickets.allowlist_training import (
@@ -25,7 +25,31 @@ from cs_tickets.allowlist_training import (
     training_available,
     commit_session,
 )
+from cs_tickets.classifier_rules import set_active_rule_specs
+from cs_tickets.drive_live_config import try_sync_live_to_drive
+from cs_tickets.feedback.parse import LearnParseResult, parse_categorized_workbook
+from cs_tickets.feedback.promote import (
+    ConfirmResult,
+    PromoteError,
+    build_candidate_live_config,
+    confirm_hybrid_proposals,
+    has_revertable_live_backup,
+    release_candidate_live_config,
+    revert_latest_live_backup,
+)
+from cs_tickets.portal_learn import (
+    learn_process_body_html,
+    learn_proposals_html,
+    learn_revert_footer_html,
+    learn_selection_hash,
+)
 from cs_tickets.repo_paths import resolve_repo_root
+from cs_tickets.runtime_config import (
+    ensure_live_bootstrapped,
+    invalidate_runtime_cache,
+    load_runtime_allowlist,
+    load_runtime_rule_specs,
+)
 from cs_tickets.drive_upload import (
     DriveUploadResult,
     drive_runs_folder_url,
@@ -43,15 +67,15 @@ from cs_tickets.portal_copy import (
     CLASSIFY_RUN_LOADING,
     DOWNLOAD_WORKBOOK_LABEL,
     NEW_UPLOAD_LABEL,
+    REFERENCE_CATEGORIES_PAGE_INTRO,
+    REFERENCE_CATEGORIES_PAGE_TITLE,
     TECHNICAL_DETAILS_BODY,
     TECHNICAL_DETAILS_SUMMARY,
     TICKET_PREVIEW_HEADING,
-    TRAINING_LINK_HINT,
-    TRAINING_LINK_LABEL,
 )
+from cs_tickets.portal_layout import portal_page_html
 from cs_tickets.portal_stats import classify_run_summary_html, tier_stats_table_html
 from cs_tickets.portal_trends import (
-    DASHBOARD_TITLE,
     dashboard_body_html,
     dashboard_empty_html,
     dashboard_page_html,
@@ -78,7 +102,6 @@ from cs_tickets.portal_training import (
     training_footer_html,
     training_page_shell,
     training_preview_section_html,
-    training_upload_body_html,
 )
 from cs_tickets.run_metadata import build_run_metadata, build_workbook_filename
 from cs_tickets.schema import MASTER_COLUMNS
@@ -116,28 +139,102 @@ class _RunRecord:
 _RUNS: dict[str, _RunRecord] = {}
 
 
-def _html_head(*, title: str) -> str:
-    return f"""<meta charset="utf-8">
-    <title>{title}</title>
-    <link rel="stylesheet" href="/static/agent_theme_1.css">
-    <link rel="stylesheet" href="/static/cs_tickets_theme.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;family=Playfair+Display:wght@700&amp;display=swap" rel="stylesheet">"""
+@dataclass
+class _LearnRecord:
+    result: LearnParseResult
+    temp_dir: Path
+    upload_path: Path
+    status: str = "processed"
+    confirm_result: ConfirmResult | None = None
+    drive_live_url: str | None = None
+    drive_files_uploaded: int | None = None
+    drive_error: str | None = None
+    drive_skip_reason: str | None = None
+    preview_batch_result: object | None = None
+    preview_compare_result: object | None = None
+    preview_rule_ids: frozenset[str] = frozenset()
+    preview_tax_ids: frozenset[str] = frozenset()
+    preview_selection_hash: str | None = None
+    preview_bad_satisfaction_only: bool = False
+    preview_compute_no_op: bool = False
+
+
+_LEARN_UPLOADS: dict[str, _LearnRecord] = {}
+
+
+def _drop_learn_upload(upload_id: str) -> None:
+    record = _LEARN_UPLOADS.pop(upload_id, None)
+    if record is not None and record.temp_dir.is_dir():
+        shutil.rmtree(record.temp_dir, ignore_errors=True)
+
+
+def _learn_error_html(message: str) -> str:
+    body = f"""
+    <h1 class="page-header">{REFERENCE_CATEGORIES_PAGE_TITLE}</h1>
+    <p class="meta drive-warning" role="alert">{_esc(message)}</p>
+    <p class="links"><a href="/learn" class="btn">Try again</a></p>
+    """
+    return portal_page_html(
+        title=REFERENCE_CATEGORIES_PAGE_TITLE,
+        active="learn",
+        body=body,
+    )
+
+
+def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
+    result = record.result
+    if record.preview_selection_hash is not None:
+        checked_rules = record.preview_rule_ids
+        checked_tax = record.preview_tax_ids
+    else:
+        checked_rules = None
+        checked_tax = None
+    summary_meta = (
+        f"{result.rule_proposal_count} suggested rules · "
+        f"{result.taxonomy_proposal_count} new category paths"
+    )
+    body = learn_process_body_html(
+        result,
+        upload_id,
+        checked_rule_ids=checked_rules,
+        checked_tax_ids=checked_tax,
+        batch_result=record.preview_batch_result,
+        compare_result=record.preview_compare_result,
+        preview_stale=False,
+        bad_satisfaction_only=record.preview_bad_satisfaction_only,
+        compute_no_op=record.preview_compute_no_op,
+    )
+    page_body = f"""
+    <p class="run-summary" role="status">
+        <span class="run-summary-lead">{result.row_count} rows parsed</span>
+        <span class="run-summary-meta">({summary_meta})</span>
+    </p>
+    <p class="meta learn-ok">Processed <strong>{_esc(result.filename)}</strong> — upload id <code>{_esc(upload_id)}</code></p>
+    <p class="meta">{result.distinct_tier_paths} distinct categories in upload · {result.eligible_row_count} rows used for learning</p>
+    {body}
+    """
+    return portal_page_html(
+        title=REFERENCE_CATEGORIES_PAGE_TITLE,
+        active="learn",
+        body=page_body,
+    )
 
 
 def _repo_root() -> Path:
     return resolve_repo_root()
 
 
+def _sync_runtime_classifier(repo_root: Path | None = None) -> None:
+    root = repo_root or _repo_root()
+    ensure_live_bootstrapped(root)
+    set_active_rule_specs(load_runtime_rule_specs(root))
+    invalidate_runtime_cache()
+
+
 def _default_allowlist():
     root = _repo_root()
-    tax = root / "doc" / "Taxonomy.csv"
-    wb = root / "doc" / "CS_ticket_new_categorizations.xlsx"
-    allow = load_allowlist(
-        tax if tax.is_file() else None,
-        wb if wb.is_file() else None,
-    )
+    _sync_runtime_classifier(root)
+    allow = load_runtime_allowlist(root)
     if len(allow.tuples) <= 5:
         logger.warning(
             "Allow-list is very small (%s tuples); doc/ may be missing on the server. "
@@ -168,26 +265,7 @@ def _classify_run_actions_html(run_id: str, *, primary: bool = False) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
-    root = _repo_root()
-    training_link = ""
-    if training_available(root):
-        training_link = f"""
-        <p class="links training-entry-link">
-            <a href="/training" class="btn btn-primary">{TRAINING_LINK_LABEL}</a>
-            <span class="meta training-entry-hint">{TRAINING_LINK_HINT}</span>
-        </p>"""
-    trends_link = """
-        <p class="links trends-entry-link">
-            <a href="/dashboard" class="btn btn-secondary">TBC trends dashboard</a>
-        </p>"""
-    head = _html_head(title=CLASSIFY_PAGE_TITLE)
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>{head}
-<script src="/static/classify.js" defer></script>
-</head>
-<body class="upload-page">
-<div class="container upload-page">
+    body = f"""
     <div class="upload-intro">
         <h1 class="page-header">{CLASSIFY_PAGE_TITLE}</h1>
         <p class="meta">{CLASSIFY_PAGE_INTRO}</p>
@@ -204,11 +282,16 @@ def index() -> str:
             </form>
         </div>
     </div>
-    {training_link}
-    {trends_link}
     {_classify_technical_details_html()}
-</div>
-</body></html>"""
+    """
+    return portal_page_html(
+        title=CLASSIFY_PAGE_TITLE,
+        active="categorize",
+        body_class="upload-page",
+        main_class="upload-page",
+        extra_scripts=["/static/classify.js"],
+        body=body,
+    )
 
 
 @app.post("/run", response_class=HTMLResponse)
@@ -291,12 +374,7 @@ async def run_upload(
                 f"{snap_rows} tickets ({snap_tbc} manual review, {snap_pct}).</p>"
             )
         run_actions = _classify_run_actions_html(run_id, primary=True)
-        head = _html_head(title="Categorization results")
-        return f"""<!DOCTYPE html>
-<html lang="en">
-<head>{head}</head>
-<body>
-<div class="container">
+        body = f"""
     {summary_block}
     {filter_note}
     {trends_html}
@@ -318,8 +396,12 @@ async def run_upload(
     </div>
 
     {_classify_technical_details_html()}
-</div>
-</body></html>"""
+    """
+        return portal_page_html(
+            title="Categorization results",
+            active="categorize",
+            body=body,
+        )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -381,21 +463,22 @@ def health() -> PlainTextResponse:
 def dashboard() -> str:
     root = _repo_root()
     db_path = trends_db_path(root)
-    head = _html_head(title=DASHBOARD_TITLE)
     if not db_path.is_file():
         body = dashboard_empty_html(db_path=db_path, repo_root=root)
-        return dashboard_page_html(head=head, body=body)
+        return dashboard_page_html(body=body)
     conn = init_db(db_path)
     try:
         events = load_trend_events(trends_events_path(root))
         body = dashboard_body_html(conn, db_path=db_path, events=events)
     finally:
         conn.close()
-    return dashboard_page_html(head=head, body=body)
+    return dashboard_page_html(body=body)
 
 
 def _training_head() -> str:
-    return _html_head(title="CS Tickets — Training")
+    from cs_tickets.portal_layout import portal_head
+
+    return portal_head(title="CS Tickets — Training")
 
 
 def _require_session(session_id: str):
@@ -409,20 +492,6 @@ def _default_allowlist_paths(root: Path) -> tuple[Path | None, Path | None]:
     tax = root / "doc" / "Taxonomy.csv"
     wb = root / "doc" / "CS_ticket_new_categorizations.xlsx"
     return (tax if tax.is_file() else None, wb if wb.is_file() else None)
-
-
-@app.get("/training", response_class=HTMLResponse)
-def training_index() -> str:
-    root = _repo_root()
-    if not training_available(root):
-        raise HTTPException(status_code=404, detail="Training is not available (doc/ or workbook not writable).")
-    body = training_upload_body_html(show_revert=has_revertable_snapshot(root))
-    return training_page_shell(
-        title=TRAINING_TITLE,
-        head=_training_head(),
-        body=body,
-        wizard_step=1,
-    )
 
 
 @app.post("/training/upload", response_class=HTMLResponse)
@@ -612,3 +681,265 @@ async def training_revert() -> str:
         """,
         wizard_step=1,
     )
+
+
+@app.get("/learn", response_class=HTMLResponse)
+def learn_index() -> str:
+    root = _repo_root()
+    live = ensure_live_bootstrapped(root)
+    revert_footer = learn_revert_footer_html(show_revert=has_revertable_live_backup(live))
+    body = f"""
+    <div class="upload-intro">
+        <h1 class="page-header">{REFERENCE_CATEGORIES_PAGE_TITLE}</h1>
+        <p class="meta">{REFERENCE_CATEGORIES_PAGE_INTRO}</p>
+    </div>
+    <div class="upload-card-wrap">
+        <div class="upload-card">
+            <form class="upload-form" action="/learn/process" method="post" enctype="multipart/form-data">
+                <input type="file" name="workbook" class="file-input" accept=".xlsx" required>
+                <button type="submit" class="btn btn-primary">Process</button>
+            </form>
+        </div>
+    </div>
+    {revert_footer}
+    """
+    return portal_page_html(
+        title=REFERENCE_CATEGORIES_PAGE_TITLE,
+        active="learn",
+        body_class="upload-page",
+        main_class="upload-page",
+        body=body,
+    )
+
+
+@app.get("/learn/process")
+def learn_process_get() -> RedirectResponse:
+    return RedirectResponse(url="/learn", status_code=303)
+
+
+@app.post("/learn/process", response_class=HTMLResponse)
+async def learn_process(workbook: UploadFile = File(...)) -> str:
+    upload_id = str(uuid.uuid4())
+    source_filename = workbook.filename or "workbook.xlsx"
+    suffix = Path(source_filename).suffix.lower()
+    if suffix != ".xlsx":
+        return _learn_error_html("Upload must be an .xlsx workbook.")
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="cs_tickets_learn_"))
+    tmp_path = tmpdir / f"workbook{suffix}"
+    tmp_path.write_bytes(await workbook.read())
+    repo_root = _repo_root()
+    try:
+        allow = _default_allowlist()
+        existing_rules = load_runtime_rule_specs(repo_root)
+        result = parse_categorized_workbook(
+            tmp_path,
+            upload_id=upload_id,
+            filename=source_filename,
+            allow=allow,
+            existing_rules=existing_rules,
+        )
+    except ValueError as exc:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        return _learn_error_html(str(exc))
+
+    _LEARN_UPLOADS[upload_id] = _LearnRecord(
+        result=result,
+        temp_dir=tmpdir,
+        upload_path=tmp_path,
+    )
+    return _learn_process_page(_LEARN_UPLOADS[upload_id], upload_id)
+
+
+@app.get("/learn/preview")
+def learn_preview_get() -> RedirectResponse:
+    return RedirectResponse(url="/learn", status_code=303)
+
+
+@app.post("/learn/preview", response_class=HTMLResponse)
+async def learn_preview(
+    upload_id: str = Form(...),
+    rule_ids: list[str] = Form(default=[]),
+    tax_ids: list[str] = Form(default=[]),
+    preview_file: UploadFile = File(...),
+    bad_satisfaction_only: bool = Form(False),
+    compute_no_op: bool = Form(False),
+) -> str:
+    record = _LEARN_UPLOADS.get(upload_id)
+    if not record or record.status != "processed":
+        return _learn_error_html("Upload session expired or unknown. Process the workbook again.")
+    _require_extension(preview_file.filename, _JSON_EXTENSIONS, "Preview file")
+
+    accepted_rules = frozenset(rule_ids)
+    accepted_tax = frozenset(tax_ids)
+    if not accepted_rules and not accepted_tax:
+        return _learn_error_html("Select at least one rule or category path before running preview.")
+
+    repo_root = _repo_root()
+    live = ensure_live_bootstrapped(repo_root)
+    tmpdir = tempfile.mkdtemp(prefix="cs_learn_preview_")
+    suffix = Path(preview_file.filename or "preview.json").suffix.lower() or ".json"
+    preview_path = Path(tmpdir) / f"preview_input{suffix}"
+    candidate = None
+    try:
+        preview_path.write_bytes(await preview_file.read())
+        candidate = build_candidate_live_config(
+            live,
+            upload_xlsx=record.upload_path,
+            rule_proposals=record.result.rule_proposals,
+            taxonomy_proposals=record.result.taxonomy_proposals,
+            accepted_rule_ids=accepted_rules,
+            accepted_taxonomy_ids=accepted_tax,
+        )
+        batch_result = run_commit_simulation(
+            [preview_path],
+            candidate.allow_old,
+            candidate.allow_new,
+            selected_tuples=candidate.selected_tuples,
+            rule_specs_new=candidate.rule_specs_new,
+            compute_no_op=compute_no_op,
+            bad_satisfaction_only=bad_satisfaction_only,
+        )
+        record.preview_batch_result = batch_result
+        record.preview_compare_result = batch_result.combined
+        record.preview_rule_ids = accepted_rules
+        record.preview_tax_ids = accepted_tax
+        record.preview_selection_hash = learn_selection_hash(accepted_rules, accepted_tax)
+        record.preview_bad_satisfaction_only = bad_satisfaction_only
+        record.preview_compute_no_op = compute_no_op
+        return _learn_process_page(record, upload_id)
+    except PromoteError as exc:
+        return _learn_error_html(str(exc))
+    except ValueError as exc:
+        return _learn_error_html(str(exc))
+    finally:
+        if candidate is not None:
+            release_candidate_live_config(candidate)
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@app.get("/learn/confirm")
+def learn_confirm_get() -> RedirectResponse:
+    return RedirectResponse(url="/learn", status_code=303)
+
+
+@app.post("/learn/confirm", response_class=HTMLResponse)
+async def learn_confirm(
+    upload_id: str = Form(...),
+    rule_ids: list[str] = Form(default=[]),
+    tax_ids: list[str] = Form(default=[]),
+) -> str:
+    record = _LEARN_UPLOADS.get(upload_id)
+    if not record:
+        return _learn_error_html("Upload session expired or unknown. Process the workbook again.")
+
+    if record.status == "live":
+        body = f"""
+    {learn_proposals_html(
+        record.result,
+        upload_id,
+        status="live",
+        confirm_result=record.confirm_result,
+        drive_live_url=record.drive_live_url,
+        drive_files_uploaded=record.drive_files_uploaded,
+        drive_error=record.drive_error,
+        drive_skip_reason=record.drive_skip_reason,
+    )}
+    <p class="links"><a href="/learn" class="btn">Upload another</a></p>
+    """
+        return portal_page_html(
+            title=REFERENCE_CATEGORIES_PAGE_TITLE,
+            active="learn",
+            body=body,
+        )
+
+    repo_root = _repo_root()
+    live = ensure_live_bootstrapped(repo_root)
+    try:
+        confirm_result = confirm_hybrid_proposals(
+            live,
+            upload_id=upload_id,
+            upload_filename=record.result.filename,
+            upload_xlsx=record.upload_path,
+            rule_proposals=record.result.rule_proposals,
+            taxonomy_proposals=record.result.taxonomy_proposals,
+            accepted_rule_ids=frozenset(rule_ids),
+            accepted_taxonomy_ids=frozenset(tax_ids),
+        )
+    except PromoteError as exc:
+        return _learn_error_html(str(exc))
+
+    _sync_runtime_classifier(repo_root)
+    drive_sync, drive_error, drive_skip = try_sync_live_to_drive(
+        live,
+        proposals_dir=confirm_result.proposals_dir,
+        backup_version=confirm_result.config_version_before,
+    )
+    record.status = "live"
+    record.confirm_result = confirm_result
+    record.drive_error = drive_error
+    record.drive_skip_reason = drive_skip
+    record.drive_live_url = drive_sync.live_folder_url if drive_sync else None
+    record.drive_files_uploaded = drive_sync.files_uploaded if drive_sync else None
+    if record.temp_dir.is_dir():
+        shutil.rmtree(record.temp_dir, ignore_errors=True)
+
+    live_after = ensure_live_bootstrapped(repo_root)
+    revert_footer = learn_revert_footer_html(show_revert=has_revertable_live_backup(live_after))
+    body = f"""
+    {learn_proposals_html(
+        record.result,
+        upload_id,
+        status="live",
+        confirm_result=confirm_result,
+        drive_live_url=record.drive_live_url,
+        drive_files_uploaded=record.drive_files_uploaded,
+        drive_error=record.drive_error,
+        drive_skip_reason=record.drive_skip_reason,
+    )}
+    <p class="links">
+        <a href="/" class="btn btn-primary">{NEW_UPLOAD_LABEL}</a>
+        <a href="/learn" class="btn">Upload another</a>
+    </p>
+    {revert_footer}
+    """
+    return portal_page_html(
+        title=REFERENCE_CATEGORIES_PAGE_TITLE,
+        active="learn",
+        body=body,
+    )
+
+
+@app.post("/learn/cancel", response_class=RedirectResponse)
+async def learn_cancel(upload_id: str = Form(...)) -> RedirectResponse:
+    _drop_learn_upload(upload_id)
+    return RedirectResponse(url="/learn", status_code=303)
+
+
+@app.post("/learn/revert", response_class=HTMLResponse)
+async def learn_revert() -> str:
+    repo_root = _repo_root()
+    live = ensure_live_bootstrapped(repo_root)
+    try:
+        restored_version = revert_latest_live_backup(live)
+    except PromoteError as exc:
+        return _learn_error_html(str(exc))
+    _sync_runtime_classifier(repo_root)
+    revert_footer = learn_revert_footer_html(show_revert=has_revertable_live_backup(live))
+    body = f"""
+    <h1 class="page-header">{REFERENCE_CATEGORIES_PAGE_TITLE}</h1>
+    <p class="run-summary" role="status">Restored live config to version {restored_version}.</p>
+    <p class="meta">The next categorisation run will use the reverted allow-list and rules.</p>
+    <p class="links"><a href="/learn" class="btn">Upload another</a></p>
+    {revert_footer}
+    """
+    return portal_page_html(
+        title=REFERENCE_CATEGORIES_PAGE_TITLE,
+        active="learn",
+        body=body,
+    )
+
+
+@app.get("/training", response_class=RedirectResponse)
+def training_redirect_to_learn() -> RedirectResponse:
+    return RedirectResponse(url="/learn", status_code=307)

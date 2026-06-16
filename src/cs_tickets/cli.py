@@ -4,7 +4,14 @@ from pathlib import Path
 
 import typer
 
+from cs_tickets.classifier_rules import set_active_rule_specs
 from cs_tickets.pipeline import run_to_csv
+from cs_tickets.repo_paths import resolve_repo_root
+from cs_tickets.runtime_config import (
+    ensure_live_bootstrapped,
+    load_runtime_allowlist,
+    load_runtime_rule_specs,
+)
 from cs_tickets.taxonomy import load_allowlist
 
 app = typer.Typer(help="SCMP CS ticket export → master CSV (flatten + tiers).")
@@ -55,10 +62,15 @@ def main(
     if input_path is None:
         typer.echo(ctx.get_help(), err=True)
         raise typer.Exit(code=2)
-    root = Path(__file__).resolve().parents[2]
-    tax = taxonomy or (root / "doc" / "Taxonomy.csv")
-    wb = workbook or (root / "doc" / "CS_ticket_new_categorizations.xlsx")
-    allow = load_allowlist(tax if tax.is_file() else None, wb if wb.is_file() else None)
+    root = resolve_repo_root()
+    if taxonomy is None and workbook is None:
+        ensure_live_bootstrapped(root)
+        set_active_rule_specs(load_runtime_rule_specs(root))
+        allow = load_runtime_allowlist(root)
+    else:
+        tax = taxonomy or (root / "doc" / "Taxonomy.csv")
+        wb = workbook or (root / "doc" / "CS_ticket_new_categorizations.xlsx")
+        allow = load_allowlist(tax if tax.is_file() else None, wb if wb.is_file() else None)
     n, warns = run_to_csv(
         input_path,
         allow,

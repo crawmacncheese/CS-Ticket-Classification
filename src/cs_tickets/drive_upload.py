@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 DRIVE_SCOPE_FILE = "https://www.googleapis.com/auth/drive.file"
 DRIVE_SCOPE_FULL = "https://www.googleapis.com/auth/drive"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+JSON_MIME = "application/json"
+CSV_MIME = "text/csv"
+FOLDER_MIME = "application/vnd.google-apps.folder"
 # K8s mount paths (see k8s/*/deploy/deployment.yaml); env GOOGLE_APPLICATION_CREDENTIALS wins.
 K8S_CREDENTIALS_PATHS: tuple[str, ...] = (
     "/config/credentials.json",
@@ -137,6 +140,139 @@ def _load_drive_credentials() -> Any:
         ) from exc
 
 
+def _supports_all_drives_kwargs() -> dict[str, Any]:
+    if _supports_all_drives():
+        return {"supportsAllDrives": True}
+    return {}
+
+
+def _list_kwargs() -> dict[str, Any]:
+    if _supports_all_drives():
+        return {"supportsAllDrives": True, "includeItemsFromAllDrives": True}
+    return {}
+
+
+def build_drive_service() -> Any:
+    credentials = _load_drive_credentials()
+    try:
+        from googleapiclient.discovery import build
+    except ImportError as exc:
+        raise DriveUploadError(
+            "Google Drive libraries are not installed. "
+            'Install with: pip install -e ".[portal]"'
+        ) from exc
+    return build("drive", "v3", credentials=credentials, cache_discovery=False)
+
+
+def find_child_file(
+    service: Any,
+    parent_id: str,
+    name: str,
+    *,
+    folder: bool = False,
+) -> dict[str, Any] | None:
+    escaped = name.replace("'", "\\'")
+    query = f"'{parent_id}' in parents and name = '{escaped}' and trashed = false"
+    if folder:
+        query += f" and mimeType = '{FOLDER_MIME}'"
+    else:
+        query += f" and mimeType != '{FOLDER_MIME}'"
+    response = (
+        service.files()
+        .list(q=query, fields="files(id,name,mimeType,webViewLink)", **_list_kwargs())
+        .execute()
+    )
+    files = response.get("files") or []
+    return files[0] if files else None
+
+
+def ensure_child_folder(service: Any, parent_id: str, name: str) -> str:
+    existing = find_child_file(service, parent_id, name, folder=True)
+    if existing and existing.get("id"):
+        return str(existing["id"])
+    body: dict[str, Any] = {
+        "name": name,
+        "mimeType": FOLDER_MIME,
+        "parents": [parent_id],
+    }
+    created = service.files().create(body=body, fields="id", **_supports_all_drives_kwargs()).execute()
+    folder_id = str(created.get("id") or "")
+    if not folder_id:
+        raise DriveUploadError(f"Drive API returned no folder id for {name!r}")
+    return folder_id
+
+
+def download_file_bytes(service: Any, file_id: str) -> bytes:
+    from googleapiclient.http import MediaIoBaseDownload
+
+    request = service.files().get_media(fileId=file_id, **_supports_all_drives_kwargs())
+    buffer = BytesIO()
+    downloader = MediaIoBaseDownload(buffer, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return buffer.getvalue()
+
+
+def upload_or_update_bytes(
+    service: Any,
+    *,
+    parent_id: str,
+    filename: str,
+    payload: bytes,
+    mime_type: str,
+) -> DriveUploadResult:
+    from googleapiclient.http import MediaIoBaseUpload
+
+    credentials = getattr(getattr(service, "_http", None), "credentials", None)
+    existing = find_child_file(service, parent_id, filename)
+    media = MediaIoBaseUpload(BytesIO(payload), mimetype=mime_type, resumable=True)
+    fields = "id,name,webViewLink"
+    try:
+        if existing and existing.get("id"):
+            updated = (
+                service.files()
+                .update(
+                    fileId=str(existing["id"]),
+                    media_body=media,
+                    fields=fields,
+                    **_supports_all_drives_kwargs(),
+                )
+                .execute()
+            )
+            file_id = str(updated.get("id") or existing["id"])
+            link = updated.get("webViewLink") or existing.get("webViewLink")
+            return DriveUploadResult(
+                file_id=file_id,
+                filename=str(updated.get("name") or filename),
+                web_view_link=str(link) if link else None,
+            )
+        created = (
+            service.files()
+            .create(
+                body={"name": filename, "parents": [parent_id]},
+                media_body=media,
+                fields=fields,
+                **_supports_all_drives_kwargs(),
+            )
+            .execute()
+        )
+    except Exception as exc:
+        raise DriveUploadError(
+            _format_drive_http_error(exc, parent_folder_id=parent_id, credentials=credentials)
+        ) from exc
+
+    file_id = str(created.get("id") or "")
+    if not file_id:
+        raise DriveUploadError("Drive API returned no file id")
+    link = created.get("webViewLink")
+    return DriveUploadResult(
+        file_id=file_id,
+        filename=str(created.get("name") or filename),
+        web_view_link=str(link) if link else None,
+    )
+
+
 def _format_drive_http_error(exc: Exception, *, parent_folder_id: str, credentials: Any) -> str:
     try:
         from googleapiclient.errors import HttpError
@@ -181,25 +317,16 @@ def upload_workbook(
             'Install with: pip install -e ".[portal]"'
         ) from exc
 
+    service = build_drive_service()
     credentials = _load_drive_credentials()
-    try:
-        from googleapiclient.discovery import build
-    except ImportError as exc:
-        raise DriveUploadError(
-            "Google Drive libraries are not installed. "
-            'Install with: pip install -e ".[portal]"'
-        ) from exc
-
-    service = build("drive", "v3", credentials=credentials, cache_discovery=False)
     body: dict[str, Any] = {"name": filename, "parents": [parent]}
     media = MediaIoBaseUpload(BytesIO(payload), mimetype=XLSX_MIME, resumable=True)
     kwargs: dict[str, Any] = {
         "body": body,
         "media_body": media,
         "fields": "id,name,webViewLink",
+        **_supports_all_drives_kwargs(),
     }
-    if _supports_all_drives():
-        kwargs["supportsAllDrives"] = True
 
     try:
         created = service.files().create(**kwargs).execute()

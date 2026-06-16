@@ -150,6 +150,54 @@ def load_allowlist(
     return AllowList(frozenset(five))
 
 
+TIER1_NOVELTY = "tier1_new"
+
+
+def novelty_type_for_tuple(
+    tier: tuple[str, str, str, str, str],
+    allow: AllowList,
+) -> str:
+    """Classify how a 5-tuple differs from the current allow-list (for hybrid promote routing)."""
+    t1, t2, t3, t4, granular = tier
+    tier4_paths = {t[:4] for t in allow.tuples if t[0] == t1 and t[1] == t2 and t[2] == t3}
+    tier3_paths = {t[:3] for t in allow.tuples if t[0] == t1 and t[1] == t2}
+    tier1_set = {t[0] for t in allow.tuples}
+    if t1 and t1 not in tier1_set:
+        return TIER1_NOVELTY
+    if (t1, t2, t3, t4) not in tier4_paths and t4:
+        return "tier4_new"
+    if (t1, t2, t3) not in tier3_paths and t3:
+        return "tier3_new"
+    if granular != "N/A":
+        return "granular_new"
+    return "path_new"
+
+
+def split_taxonomy_proposals(
+    proposals: tuple["TaxonomyProposal", ...],
+) -> tuple[tuple["TaxonomyProposal", ...], frozenset[tuple[str, str, str, str, str]]]:
+    """Route accepted taxonomy proposals to CSV merge vs workbook exemplar merge."""
+    from cs_tickets.feedback.models import TaxonomyProposal
+
+    csv_proposals: list[TaxonomyProposal] = []
+    workbook_tuples: set[tuple[str, str, str, str, str]] = set()
+    for proposal in proposals:
+        novelty = proposal.novelty_type
+        if novelty == "granular_new":
+            workbook_tuples.add(proposal.tier)
+        elif novelty in ("tier4_new", "tier3_new", TIER1_NOVELTY):
+            csv_proposals.append(proposal)
+            if proposal.tier[4] != "N/A":
+                workbook_tuples.add(proposal.tier)
+        elif novelty == "path_new":
+            csv_proposals.append(proposal)
+            if proposal.tier[4] != "N/A":
+                workbook_tuples.add(proposal.tier)
+        else:
+            csv_proposals.append(proposal)
+    return tuple(csv_proposals), frozenset(workbook_tuples)
+
+
 def _is_complete_five_tuple(t: tuple[str, str, str, str, str]) -> bool:
     return all((v or "").strip() for v in t)
 

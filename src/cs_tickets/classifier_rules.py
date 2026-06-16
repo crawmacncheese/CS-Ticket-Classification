@@ -78,8 +78,19 @@ def _load_core_rules() -> tuple[RuleSpec, ...]:
     return _load_rules_file(Path(path))
 
 
+_override_rule_specs: tuple[RuleSpec, ...] | None = None
+
+
+def set_active_rule_specs(rules: tuple[RuleSpec, ...] | None) -> None:
+    """Portal/runtime override; None restores package + training_rules defaults."""
+    global _override_rule_specs
+    _override_rule_specs = rules
+
+
 @lru_cache(maxsize=1)
 def load_rule_specs() -> tuple[RuleSpec, ...]:
+    if _override_rule_specs is not None:
+        return _override_rule_specs
     core = _load_core_rules()
     path = training_rules_path()
     if not path.is_file():

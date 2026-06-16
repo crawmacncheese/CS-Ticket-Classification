@@ -15,7 +15,93 @@ body {
 body.upload-page {
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+}
+
+.portal-shell {
+  width: 100%;
+  max-width: 1200px;
+}
+
+.portal-header {
+  position: static;
+  background-color: var(--card);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 1.15rem 1.35rem 1.25rem;
+  margin-bottom: 1.75rem;
+}
+
+.portal-brand {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 1.4rem;
+  margin: 0 0 0.9rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 3px solid var(--primary);
+  color: var(--foreground);
+  letter-spacing: -0.02em;
+}
+
+.portal-topnav {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
+}
+
+.portal-topnav .btn {
+  padding: 0.55rem 1rem;
+  font-size: 0.9rem;
+  margin: 0;
+  text-decoration: none;
+  font-family: var(--font-sans);
+}
+
+.portal-topnav .btn:hover {
+  text-decoration: none;
+}
+
+.portal-topnav-spacer {
+  flex: 1;
+  min-width: 0.5rem;
+}
+
+.portal-topnav-external {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .portal-header {
+    padding: 1rem;
+  }
+
+  .portal-brand {
+    font-size: 1.2rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .portal-topnav {
+    gap: 0.4rem;
+  }
+
+  .portal-topnav .btn {
+    flex: 1 1 calc(50% - 0.4rem);
+    text-align: center;
+    font-size: 0.8125rem;
+    padding: 0.5rem 0.6rem;
+  }
+
+  .portal-topnav-spacer {
+    display: none;
+  }
+
+  .portal-topnav-external {
+    flex: 1 1 100%;
+  }
 }
 
 .container {
@@ -23,7 +109,12 @@ body.upload-page {
   max-width: 1200px;
 }
 
-.container.upload-page {
+.portal-main {
+  width: 100%;
+}
+
+.container.upload-page,
+.portal-main.upload-page {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -309,6 +400,39 @@ body.upload-page {
   border: 1px solid color-mix(in srgb, var(--primary) 72%, #1c1917 28%);
 }
 
+.stats-table thead th.chk,
+.stats-table tbody td.chk {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.stats-table tbody td.chk input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.learn-preview-section {
+  margin-top: 2rem;
+}
+
+.learn-preview-section .upload-card-wrap {
+  justify-content: flex-start;
+}
+
+.learn-confirm-bar {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 2px solid var(--border);
+}
+
+.learn-confirm-bar .training-actions {
+  margin-top: 0.75rem;
+}
+
 .stats-table tbody td {
   border: 1px solid var(--muted);
   padding: 9px 12px;
@@ -317,10 +441,6 @@ body.upload-page {
 
 .trends-page .page-header {
   margin-bottom: 0.35rem;
-}
-
-.trends-nav {
-  margin-bottom: 1.5rem;
 }
 
 .trends-generated {

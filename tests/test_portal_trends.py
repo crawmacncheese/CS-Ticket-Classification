@@ -20,7 +20,8 @@ def test_dashboard_empty_when_no_db(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     assert r.status_code == 200
     assert "TBC trends" in r.text
     assert "No trend database" in r.text
-    assert 'href="/"' in r.text
+    assert 'href="/learn"' in r.text
+    assert "portal-topnav" in r.text
 
 
 def test_dashboard_with_snapshot_db(repo_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,7 +77,9 @@ def test_index_links_to_dashboard() -> None:
     r = client.get("/")
     assert r.status_code == 200
     assert 'href="/dashboard"' in r.text
-    assert "TBC trends dashboard" in r.text
+    assert "TBC trends" in r.text
+    assert "training-entry-link" not in r.text
+    assert "trends-entry-link" not in r.text
 
 
 def test_run_auto_snapshot_when_enabled(

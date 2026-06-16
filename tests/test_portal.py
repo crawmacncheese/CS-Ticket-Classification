@@ -67,6 +67,7 @@ def test_run_upload_ndjson(repo_root: Path) -> None:
     assert "tickets categorized" in r.text
     assert "manual review" in r.text
     assert "(TBC)" in r.text
+    assert "portal-topnav" in r.text
     assert "Download Excel workbook" in r.text
     assert "New upload" in r.text
     assert "Run history" in r.text
@@ -156,28 +157,31 @@ def test_static_theme_css() -> None:
 
 def test_training_link_on_index_when_available(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cs_tickets.portal_app._repo_root", lambda: repo_root)
-    monkeypatch.setattr("cs_tickets.portal_app.training_available", lambda _root: True)
     r = client.get("/")
     assert r.status_code == 200
-    assert "/training" in r.text
+    assert "/learn" in r.text
+    assert "Update reference categories" in r.text
+    assert "portal-topnav" in r.text
+
+
+def test_training_redirects_to_learn() -> None:
+    r = client.get("/training", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/learn"
 
 
 def test_training_hidden_when_not_available(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cs_tickets.portal_app.training_available", lambda _root: False)
-    r = client.get("/training")
+    r = client.post("/training/upload", files={"workbook": ("x.xlsx", b"", "application/octet-stream")})
     assert r.status_code == 404
 
 
-def test_training_upload_page(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_training_upload_via_post(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cs_tickets.portal_app._repo_root", lambda: repo_root)
     monkeypatch.setattr("cs_tickets.portal_app.training_available", lambda _root: True)
-    r = client.get("/training")
+    r = client.get("/training", follow_redirects=True)
     assert r.status_code == 200
-    assert "Update categories" in r.text
-    assert "training-wizard" in r.text
-    assert "Upload classified workbook" in r.text
-    assert "Back to categorize" in r.text
-    assert 'href="/"' in r.text
+    assert "Update reference categories" in r.text
 
 
 def _training_sample_row(**tier_overrides: str) -> dict[str, str]:
