@@ -12,19 +12,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.staticfiles import StaticFiles
 
-from cs_tickets.allowlist_training import (
-    build_candidate_allowlist,
-    build_candidate_rule_set,
-    commit_success_message,
-    create_session,
-    drop_session,
-    get_session,
-    has_revertable_snapshot,
-    revert_latest_snapshot,
-    store_preview,
-    training_available,
-    commit_session,
-)
+from cs_tickets.batch_allowlist_analysis import run_commit_simulation
 from cs_tickets.classifier_rules import set_active_rule_specs
 from cs_tickets.drive_live_config import try_sync_live_to_drive
 from cs_tickets.feedback.parse import LearnParseResult, parse_categorized_workbook
@@ -88,24 +76,8 @@ from cs_tickets.tbc_trends import (
     try_append_portal_snapshot,
 )
 from cs_tickets.portal_workbook import build_run_workbook_bytes
-from cs_tickets.batch_allowlist_analysis import run_commit_simulation
-from cs_tickets.portal_training import (
-    REVIEW_STEP_HEADING,
-    TRAINING_CANCEL_TITLE,
-    TRAINING_REVERT_TITLE,
-    TRAINING_REVIEW_TITLE,
-    TRAINING_SUCCESS_TITLE,
-    TRAINING_TITLE,
-    parse_selected_tuples,
-    review_intro_html,
-    training_checklist_html,
-    training_footer_html,
-    training_page_shell,
-    training_preview_section_html,
-)
 from cs_tickets.run_metadata import build_run_metadata, build_workbook_filename
 from cs_tickets.schema import MASTER_COLUMNS
-from cs_tickets.taxonomy import load_allowlist
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +129,7 @@ class _LearnRecord:
     preview_selection_hash: str | None = None
     preview_bad_satisfaction_only: bool = False
     preview_compute_no_op: bool = False
+    preview_no_op_tuples: frozenset[tuple[str, str, str, str, str]] = frozenset()
 
 
 _LEARN_UPLOADS: dict[str, _LearnRecord] = {}
@@ -189,6 +162,15 @@ def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
     else:
         checked_rules = None
         checked_tax = None
+    default_rules = frozenset(p.proposal_id for p in result.rule_proposals)
+    default_tax = frozenset(p.proposal_id for p in result.taxonomy_proposals)
+    current_rules = checked_rules if checked_rules is not None else default_rules
+    current_tax = checked_tax if checked_tax is not None else default_tax
+    preview_stale = (
+        record.preview_selection_hash is not None
+        and record.preview_selection_hash
+        != learn_selection_hash(current_rules, current_tax)
+    )
     summary_meta = (
         f"{result.rule_proposal_count} suggested rules · "
         f"{result.taxonomy_proposal_count} new category paths"
@@ -200,9 +182,12 @@ def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
         checked_tax_ids=checked_tax,
         batch_result=record.preview_batch_result,
         compare_result=record.preview_compare_result,
-        preview_stale=False,
+        preview_stale=preview_stale,
         bad_satisfaction_only=record.preview_bad_satisfaction_only,
         compute_no_op=record.preview_compute_no_op,
+        preview_rule_ids=record.preview_rule_ids,
+        preview_tax_ids=record.preview_tax_ids,
+        no_op_tuples=record.preview_no_op_tuples,
     )
     page_body = f"""
     <p class="run-summary" role="status">
@@ -217,6 +202,7 @@ def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
         title=REFERENCE_CATEGORIES_PAGE_TITLE,
         active="learn",
         body=page_body,
+        extra_scripts=["/static/training.js?v=4"],
     )
 
 
@@ -237,9 +223,9 @@ def _default_allowlist():
     allow = load_runtime_allowlist(root)
     if len(allow.tuples) <= 5:
         logger.warning(
-            "Allow-list is very small (%s tuples); doc/ may be missing on the server. "
-            "Set CS_TICKETS_REPO_ROOT to the app root that contains doc/, or ensure "
-            "cwd / HOME/site/wwwroot includes Taxonomy.csv and the reference xlsx.",
+            "Allow-list is very small (%s tuples); runs/live/ may be empty or Drive sync failed. "
+            "Local dev: ensure doc/ or references/ seeds exist, or set RUNTIME_CONFIG_DRIVE_ENABLED "
+            "with GOOGLE_DRIVE_LIVE_FOLDER_ID for deployed config.",
             len(allow.tuples),
         )
     return allow
@@ -475,214 +461,6 @@ def dashboard() -> str:
     return dashboard_page_html(body=body)
 
 
-def _training_head() -> str:
-    from cs_tickets.portal_layout import portal_head
-
-    return portal_head(title="CS Tickets — Training")
-
-
-def _require_session(session_id: str):
-    session = get_session(session_id)
-    if not session:
-        raise HTTPException(status_code=400, detail="Unknown or expired training session; upload again.")
-    return session
-
-
-def _default_allowlist_paths(root: Path) -> tuple[Path | None, Path | None]:
-    tax = root / "doc" / "Taxonomy.csv"
-    wb = root / "doc" / "CS_ticket_new_categorizations.xlsx"
-    return (tax if tax.is_file() else None, wb if wb.is_file() else None)
-
-
-@app.post("/training/upload", response_class=HTMLResponse)
-async def training_upload(workbook: UploadFile = File(...)) -> str:
-    root = _repo_root()
-    if not training_available(root):
-        raise HTTPException(status_code=404, detail="Training is not available.")
-    _require_extension(workbook.filename, _XLSX_EXTENSIONS, "Classified workbook")
-    suffix = Path(workbook.filename or "upload.xlsx").suffix or ".xlsx"
-    tmpdir = tempfile.mkdtemp(prefix="cs_training_upload_")
-    tmp_path = Path(tmpdir) / f"upload{suffix}"
-    try:
-        tmp_path.write_bytes(await workbook.read())
-        try:
-            session = create_session(tmp_path, root)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return _training_review_page(session, selected=frozenset(), preview_result=None)
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-def _training_review_page(
-    session,
-    *,
-    selected,
-    preview_result,
-    batch_result=None,
-) -> str:
-    root = session.repo_root
-    tax_path, wb_path = _default_allowlist_paths(root)
-    allow = load_allowlist(tax_path, wb_path)
-    checklist = training_checklist_html(session, selected, allow=allow)
-    preview_block = training_preview_section_html(
-        session,
-        selected,
-        preview_result,
-        batch_result=batch_result,
-    )
-    intro = review_intro_html(len(session.new_tuples)) if session.new_tuples else ""
-    step_heading = f'<h2 class="section-header">{REVIEW_STEP_HEADING}</h2>' if session.new_tuples else ""
-    has_preview = preview_result is not None or batch_result is not None or session.preview_result is not None
-    if not session.new_tuples:
-        wizard_step = 1
-    elif has_preview:
-        wizard_step = 3
-    else:
-        wizard_step = 2
-    body = f"""
-    {intro}
-    {step_heading}
-    {checklist}
-    {preview_block}
-    {training_footer_html(show_revert=has_revertable_snapshot(root), show_back=not session.new_tuples)}
-    """
-    return training_page_shell(
-        title=TRAINING_REVIEW_TITLE,
-        head=_training_head(),
-        body=body,
-        wizard_step=wizard_step,
-    )
-
-
-@app.post("/training/preview", response_class=HTMLResponse)
-async def training_preview(
-    session_id: str = Form(...),
-    selected_tuple: list[str] = Form(default=[]),
-    preview_file: UploadFile = File(...),
-    bad_satisfaction_only: bool = Form(False),
-    compute_no_op: bool = Form(False),
-) -> str:
-    root = _repo_root()
-    if not training_available(root):
-        raise HTTPException(status_code=404, detail="Training is not available.")
-    session = _require_session(session_id)
-    _require_extension(preview_file.filename, _JSON_EXTENSIONS, "Preview file")
-    selected = parse_selected_tuples(selected_tuple)
-    if not selected:
-        raise HTTPException(status_code=400, detail="Select at least one tuple before running preview.")
-
-    tax_path, wb_path = _default_allowlist_paths(root)
-    allow_old = load_allowlist(tax_path, wb_path)
-    allow_new, merged = build_candidate_allowlist(session, selected)
-    if merged == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Selected combinations did not change the candidate allow-list. Ensure each selected tuple has a matching row in your upload.",
-        )
-
-    tmpdir = tempfile.mkdtemp(prefix="cs_training_preview_")
-    suffix = Path(preview_file.filename or "preview.json").suffix.lower() or ".json"
-    preview_path = Path(tmpdir) / f"preview_input{suffix}"
-    try:
-        preview_path.write_bytes(await preview_file.read())
-
-        rule_specs_new = build_candidate_rule_set(session, selected)
-        try:
-            batch_result = run_commit_simulation(
-                [preview_path],
-                allow_old,
-                allow_new,
-                selected_tuples=selected,
-                rule_specs_new=rule_specs_new,
-                compute_no_op=compute_no_op,
-                bad_satisfaction_only=bad_satisfaction_only,
-            )
-            result = batch_result.combined
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        store_preview(
-            session,
-            result,
-            selected,
-            bad_satisfaction_only=bad_satisfaction_only,
-            compute_no_op=compute_no_op,
-            batch_result=batch_result,
-        )
-        return _training_review_page(
-            session,
-            selected=selected,
-            preview_result=result,
-            batch_result=batch_result,
-        )
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-
-@app.post("/training/commit", response_class=HTMLResponse)
-async def training_commit(
-    session_id: str = Form(...),
-    selected_tuple: list[str] = Form(default=[]),
-) -> str:
-    root = _repo_root()
-    if not training_available(root):
-        raise HTTPException(status_code=404, detail="Training is not available.")
-    session = _require_session(session_id)
-    selected = parse_selected_tuples(selected_tuple)
-    if not selected:
-        raise HTTPException(status_code=400, detail="Select at least one tuple to commit.")
-    result = commit_session(session, selected)
-    body = f"""
-    <p class="run-summary" role="status">{commit_success_message(result)}</p>
-    <p class="meta">Review changes with <code>git diff doc/</code> and commit to version control separately. Training commit writes to disk only.</p>
-    <p class="links"><a href="/training" class="btn">New training upload</a></p>
-    {training_footer_html(show_revert=True)}
-    """
-    return training_page_shell(
-        title=TRAINING_SUCCESS_TITLE,
-        head=_training_head(),
-        body=body,
-        wizard_step=3,
-    )
-
-
-@app.post("/training/cancel", response_class=HTMLResponse)
-async def training_cancel(session_id: str = Form(...)) -> str:
-    session = get_session(session_id)
-    if session:
-        drop_session(session)
-    return training_page_shell(
-        title=TRAINING_CANCEL_TITLE,
-        head=_training_head(),
-        body=f"""
-        <p class="meta" role="status">Session cancelled — no changes were made to doc/.</p>
-        <p class="links"><a href="/training" class="btn">Start over</a></p>
-        {training_footer_html(show_revert=has_revertable_snapshot(_repo_root()))}
-        """,
-        wizard_step=1,
-    )
-
-
-@app.post("/training/revert", response_class=HTMLResponse)
-async def training_revert() -> str:
-    root = _repo_root()
-    if not training_available(root):
-        raise HTTPException(status_code=404, detail="Training is not available.")
-    if not revert_latest_snapshot(root):
-        raise HTTPException(status_code=400, detail="No snapshot available to revert.")
-    return training_page_shell(
-        title=TRAINING_REVERT_TITLE,
-        head=_training_head(),
-        body=f"""
-        <p class="run-summary" role="status">Restored doc/ artifacts from the latest Training snapshot.</p>
-        <p class="meta">If you already committed workbook changes to git, disk may now differ from git history — reconcile manually.</p>
-        <p class="links"><a href="/training" class="btn">Training home</a></p>
-        {training_footer_html(show_revert=has_revertable_snapshot(root))}
-        """,
-        wizard_step=1,
-    )
-
-
 @app.get("/learn", response_class=HTMLResponse)
 def learn_index() -> str:
     root = _repo_root()
@@ -807,6 +585,8 @@ async def learn_preview(
         record.preview_selection_hash = learn_selection_hash(accepted_rules, accepted_tax)
         record.preview_bad_satisfaction_only = bad_satisfaction_only
         record.preview_compute_no_op = compute_no_op
+        no_op = getattr(batch_result, "selection_no_op_tuples", None)
+        record.preview_no_op_tuples = no_op if no_op is not None else frozenset()
         return _learn_process_page(record, upload_id)
     except PromoteError as exc:
         return _learn_error_html(str(exc))

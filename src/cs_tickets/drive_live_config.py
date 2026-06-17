@@ -11,6 +11,7 @@ from cs_tickets.drive_upload import (
     CSV_MIME,
     DriveUploadError,
     JSON_MIME,
+    XLSX_MIME,
     build_drive_service,
     download_file_bytes,
     drive_folder_id,
@@ -37,7 +38,16 @@ _LIVE_FILES: tuple[tuple[str, str], ...] = (
     (TAXONOMY_FILE, CSV_MIME),
     (RULES_FILE, JSON_MIME),
     (CONFIG_VERSION_FILE, JSON_MIME),
+    (WORKBOOK_FILE, XLSX_MIME),
 )
+
+
+def live_file_mime(filename: str) -> str:
+    if filename.endswith(".json"):
+        return JSON_MIME
+    if filename.endswith(".xlsx"):
+        return XLSX_MIME
+    return CSV_MIME
 
 
 @dataclass(frozen=True)
@@ -140,7 +150,7 @@ def _upload_directory_files(
     for path in sorted(directory.iterdir()):
         if not path.is_file():
             continue
-        mime = JSON_MIME if path.suffix == ".json" else CSV_MIME
+        mime = live_file_mime(path.name)
         upload_or_update_bytes(
             service,
             parent_id=parent_id,

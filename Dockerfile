@@ -25,10 +25,11 @@ COPY README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-editable --extra portal
 
-# Ensure .venv is accessible to the non-root user
+# Non-root user; entire /app must be writable for runs/live/ and runs/proposals/
 RUN addgroup --system appgroup && \
     adduser --system --no-create-home --ingroup appgroup appuser && \
-    chown -R appuser:appgroup .venv
+    mkdir -p runs/live runs/proposals && \
+    chown -R appuser:appgroup /app
 
 USER appuser
 

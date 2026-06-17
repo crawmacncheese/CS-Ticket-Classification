@@ -65,9 +65,9 @@ def _signals(row: dict[str, Any]) -> _RowSignals:
     tags_s = row.get("_enriched_tags") or row.get("tags")
     tags = _tags_list(tags_s if isinstance(tags_s, str) else None)
     tags_joined = " ".join(tags)
-    subject = (row.get("subject") or "").lower()
-    raw_subject = (row.get("raw_subject") or "").lower()
-    desc = (row.get("description") or "").lower()
+    subject = str(row.get("subject") or "").lower()
+    raw_subject = str(row.get("raw_subject") or "").lower()
+    desc = str(row.get("description") or "").lower()
     thread = str(row.get("_thread_blob") or "")
     blob = f"{subject} {raw_subject} {desc} {thread}".strip()
     is_reply = bool(row.get("_is_reply")) or (
@@ -84,7 +84,7 @@ def _signals(row: dict[str, Any]) -> _RowSignals:
         blob_500=blob[:500],
         blob_600=blob[:600],
         blob_1200=blob[:1200],
-        url=(row.get("url") or "").lower(),
+        url=str(row.get("url") or "").lower(),
         is_reply=is_reply,
     )
 

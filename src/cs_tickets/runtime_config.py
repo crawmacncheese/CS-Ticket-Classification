@@ -26,6 +26,15 @@ def live_dir(repo_root: Path) -> Path:
     return repo_root.joinpath(*LIVE_SUBDIR)
 
 
+def _seed_path(repo_root: Path, filename: str) -> Path | None:
+    """Bootstrap source: references/ first, then doc/ (image fallback)."""
+    for subdir in ("references", "doc"):
+        candidate = repo_root / subdir / filename
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _write_rules_json(path: Path, rules: tuple[RuleSpec, ...]) -> None:
     payload: list[dict[str, object]] = []
     for rule in rules:
@@ -77,15 +86,14 @@ def _bootstrap_live_rules(repo_root: Path, target: Path) -> None:
 
 
 def ensure_live_bootstrapped(repo_root: Path) -> Path:
-    """Create runs/live/ from doc/ + package rules when missing."""
+    """Create runs/live/ from references/doc seeds, then overlay Drive when enabled."""
     target = live_dir(repo_root)
     target.mkdir(parents=True, exist_ok=True)
 
-    doc = repo_root / "doc"
-    tax_src = doc / TAXONOMY_FILE
     tax_dst = target / TAXONOMY_FILE
     if not tax_dst.is_file():
-        if tax_src.is_file():
+        tax_src = _seed_path(repo_root, TAXONOMY_FILE)
+        if tax_src is not None:
             shutil.copy2(tax_src, tax_dst)
         else:
             tax_dst.write_text(
@@ -95,10 +103,11 @@ def ensure_live_bootstrapped(repo_root: Path) -> Path:
 
     _bootstrap_live_rules(repo_root, target)
 
-    wb_src = doc / WORKBOOK_FILE
     wb_dst = target / WORKBOOK_FILE
-    if wb_src.is_file() and not wb_dst.is_file():
-        shutil.copy2(wb_src, wb_dst)
+    if not wb_dst.is_file():
+        wb_src = _seed_path(repo_root, WORKBOOK_FILE)
+        if wb_src is not None:
+            shutil.copy2(wb_src, wb_dst)
 
     if not (target / CONFIG_VERSION_FILE).is_file():
         write_config_version(target, version=1, proposal_id="bootstrap", upload_id="bootstrap")
@@ -107,6 +116,16 @@ def ensure_live_bootstrapped(repo_root: Path) -> Path:
         sync_live_from_drive(target)
 
     return target
+
+
+def refresh_live_from_drive(repo_root: Path) -> None:
+    """Re-download live config from Drive (multi-replica freshness after Confirm)."""
+    if not drive_live_config_enabled():
+        return
+    target = live_dir(repo_root)
+    target.mkdir(parents=True, exist_ok=True)
+    sync_live_from_drive(target)
+    invalidate_runtime_cache()
 
 
 def runtime_config_enabled(repo_root: Path) -> bool:

@@ -643,3 +643,31 @@ def confirm_hybrid_proposals(
         accepted_rule_ids=tuple(sorted(accepted_rule_ids)),
         accepted_taxonomy_ids=tuple(sorted(accepted_taxonomy_ids)),
     )
+
+
+def confirm_learn_proposals(  # backward-compatible alias (prod tests / older UI code)
+    live_dir: Path,
+    *,
+    upload_id: str,
+    upload_filename: str,
+    rule_proposals: tuple[RuleProposal, ...],
+    taxonomy_proposals: tuple[TaxonomyProposal, ...],
+    accepted_rule_ids: frozenset[str],
+    accepted_taxonomy_ids: frozenset[str],
+) -> ConfirmResult:
+    """
+    Backwards-compatible wrapper for older naming.
+
+    This variant does not provide `upload_xlsx`, so it is only safe when the
+    confirmed selection does not include any `granular_new` / workbook merges.
+    """
+    return confirm_hybrid_proposals(
+        live_dir,
+        upload_id=upload_id,
+        upload_filename=upload_filename,
+        upload_xlsx=None,
+        rule_proposals=rule_proposals,
+        taxonomy_proposals=taxonomy_proposals,
+        accepted_rule_ids=accepted_rule_ids,
+        accepted_taxonomy_ids=accepted_taxonomy_ids,
+    )

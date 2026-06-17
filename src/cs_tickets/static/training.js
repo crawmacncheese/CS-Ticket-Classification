@@ -14,6 +14,14 @@ document.addEventListener("DOMContentLoaded", () => {
     return [...document.querySelectorAll(".tuple-checkbox:checked")];
   }
 
+  function updateLearnPreviewBtn() {
+    const btn = document.getElementById("learn-preview-btn");
+    if (!btn) return;
+    const any =
+      document.querySelectorAll("#learn-confirm-form input.learn-row-chk:checked").length > 0;
+    btn.disabled = !any;
+  }
+
   function updateActionButtons() {
     const hasSelection = selectedCheckboxes().length > 0;
     if (commitBtn) {
@@ -22,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (previewBtn) {
       previewBtn.disabled = !hasSelection;
     }
+    updateLearnPreviewBtn();
   }
 
   checkboxes.forEach((cb) => {
@@ -54,6 +63,21 @@ document.addEventListener("DOMContentLoaded", () => {
       updateActionButtons();
     });
   }
+
+  document.querySelectorAll(".learn-deselect-no-op-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const name = btn.getAttribute("data-checkbox-name");
+      if (!name) {
+        return;
+      }
+      document
+        .querySelectorAll(`tr.learn-row--no-op input.learn-row-chk[name="${name}"]`)
+        .forEach((cb) => {
+          cb.checked = false;
+        });
+      updateActionButtons();
+    });
+  });
 
   if (previewForm && previewSelected) {
     previewForm.addEventListener("submit", (event) => {

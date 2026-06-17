@@ -164,4 +164,10 @@ NDJSON impact preview via `build_candidate_live_config()` + `POST /learn/preview
 
 ## Next (Phase 5)
 
-Migration cleanup: remove legacy `/training` POST routes, migrate `doc/training_rules.json` overlay.
+Migration cleanup — see [2026-06-16-drive-live-config-alignment.md](./2026-06-16-drive-live-config-alignment.md) (Drive sync + `/training` removal, **done**).
+
+Remaining Phase 5 items:
+
+- [ ] One-time migration script: copy `doc/training_rules.json` entries into `runs/live/classifier_rules.json` (bootstrap merge covers fresh installs)
+- [ ] Update `testcase.md`, `docs/design.md` §15
+- [ ] Optional: git mirror job for `runs/live/` → `doc/` (maintainer-only)

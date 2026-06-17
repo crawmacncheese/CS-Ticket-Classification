@@ -13,6 +13,12 @@ from cs_tickets.feedback.promote import ConfirmResult
 from cs_tickets.portal_training import training_changed_rows_html, training_verdict_banner_html
 from cs_tickets.portal_training_copy import (
     CANCEL_LABEL,
+    DESELECT_NO_OP_BUTTON,
+    IMPACT_COLUMN_HEADING,
+    IMPACT_NO_EFFECT,
+    IMPACT_NOT_ANALYZED,
+    IMPACT_SUMMARY,
+    IMPACT_WOULD_CHANGE,
     PREVIEW_BUTTON,
     PREVIEW_HELP,
     PREVIEW_LOADING,
@@ -91,11 +97,12 @@ def _table_headers_html(headers: list[str], *, selectable: bool) -> str:
     return "".join(parts)
 
 
-def _learn_select_actions_html(checkbox_name: str) -> str:
+def _learn_select_actions_html(checkbox_name: str, *, deselect_html: str = "") -> str:
     name = _h(checkbox_name)
     return f"""<p class="training-select-actions">
         <button type="button" class="btn btn-secondary learn-select-all-btn" data-checkbox-name="{name}">Select all</button>
         <button type="button" class="btn btn-secondary learn-select-none-btn" data-checkbox-name="{name}">Select none</button>
+        {deselect_html}
     </p>"""
 
 
@@ -113,6 +120,89 @@ def learn_selection_hash(
 ) -> str:
     parts = sorted(rule_ids) + sorted(tax_ids)
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+
+def _learn_show_impact(
+    *,
+    compute_no_op: bool,
+    batch_result: BatchCompareResult | None,
+    preview_stale: bool,
+) -> bool:
+    return bool(compute_no_op and batch_result is not None and not preview_stale)
+
+
+def _preview_tiers(
+    result: LearnParseResult,
+    preview_rule_ids: frozenset[str],
+    preview_tax_ids: frozenset[str],
+) -> frozenset[tuple[str, str, str, str, str]]:
+    tiers: set[tuple[str, str, str, str, str]] = set()
+    for proposal in result.rule_proposals:
+        if proposal.proposal_id in preview_rule_ids:
+            tiers.add(proposal.tier)
+    for proposal in result.taxonomy_proposals:
+        if proposal.proposal_id in preview_tax_ids:
+            tiers.add(proposal.tier)
+    return frozenset(tiers)
+
+
+def _impact_badge_html(kind: str) -> str:
+    labels = {
+        "yes": (IMPACT_WOULD_CHANGE, "impact--yes"),
+        "none": (IMPACT_NO_EFFECT, "impact--none"),
+        "na": (IMPACT_NOT_ANALYZED, "impact--na"),
+    }
+    label, css = labels[kind]
+    return f'<span class="impact-badge {css}">{_h(label)}</span>'
+
+
+def _proposal_impact(
+    *,
+    proposal_id: str,
+    tier: tuple[str, str, str, str, str],
+    preview_ids: frozenset[str],
+    no_op_tuples: frozenset[tuple[str, str, str, str, str]],
+) -> str | None:
+    if proposal_id not in preview_ids:
+        return "na"
+    if tier in no_op_tuples:
+        return "none"
+    return "yes"
+
+
+def _section_has_no_op(
+    proposals: tuple[RuleProposal | TaxonomyProposal, ...],
+    preview_ids: frozenset[str],
+    no_op_tuples: frozenset[tuple[str, str, str, str, str]],
+) -> bool:
+    return any(
+        proposal.proposal_id in preview_ids and proposal.tier in no_op_tuples
+        for proposal in proposals
+    )
+
+
+def _learn_deselect_button_html(checkbox_name: str) -> str:
+    return (
+        f'<button type="button" class="btn btn-secondary learn-deselect-no-op-btn" '
+        f'data-checkbox-name="{_h(checkbox_name)}">{DESELECT_NO_OP_BUTTON}</button>'
+    )
+
+
+def _learn_impact_summary_html(
+    result: LearnParseResult,
+    *,
+    preview_rule_ids: frozenset[str],
+    preview_tax_ids: frozenset[str],
+    no_op_tuples: frozenset[tuple[str, str, str, str, str]],
+) -> str:
+    preview_tiers = _preview_tiers(result, preview_rule_ids, preview_tax_ids)
+    if not preview_tiers:
+        return ""
+    no_op_n = len(preview_tiers & no_op_tuples)
+    impactful_n = len(preview_tiers - no_op_tuples)
+    return (
+        f'<p class="meta impact-summary">{IMPACT_SUMMARY.format(impactful=impactful_n, no_op=no_op_n, total=len(preview_tiers))}</p>'
+    )
 
 
 _LEARN_SELECT_ALL_SCRIPT = """
@@ -156,6 +246,9 @@ def rule_proposals_table_html(
     *,
     selectable: bool = False,
     checked_ids: frozenset[str] | None = None,
+    show_impact: bool = False,
+    preview_ids: frozenset[str] | None = None,
+    no_op_tuples: frozenset[tuple[str, str, str, str, str]] | None = None,
 ) -> str:
     headers = [
         "When tickets…",
@@ -167,8 +260,12 @@ def rule_proposals_table_html(
         "Consistency",
         "Example ticket ids",
     ]
+    if show_impact:
+        headers.append(IMPACT_COLUMN_HEADING)
     num_cols = {6 if selectable else 5}
     th = _table_headers_html(headers, selectable=selectable)
+    preview = preview_ids or frozenset()
+    no_ops = no_op_tuples or frozenset()
     trs: list[str] = []
     for i, proposal in enumerate(proposals[:_MAX_RULE_ROWS]):
         t1, t2, t3, t4, _granular = proposal.tier
@@ -192,11 +289,26 @@ def rule_proposals_table_html(
                 ),
                 *cells,
             ]
-        row_cls = "zebra-even" if i % 2 == 1 else "zebra-odd"
+        row_classes = ["zebra-even" if i % 2 == 1 else "zebra-odd", "learn-row"]
+        if show_impact:
+            impact = _proposal_impact(
+                proposal_id=proposal.proposal_id,
+                tier=proposal.tier,
+                preview_ids=preview,
+                no_op_tuples=no_ops,
+            )
+            if impact == "none":
+                row_classes.append("learn-row--no-op")
+            elif impact == "yes":
+                row_classes.append("learn-row--impactful")
+            cells.append(_impact_badge_html(impact or "na"))
+        row_cls = " ".join(row_classes)
         tds_parts: list[str] = []
         for j, cell in enumerate(cells):
             cls = _cell_class(j, num_cols=num_cols, selectable=selectable)
             if selectable and j == 0:
+                tds_parts.append(f"<td class='{cls}'>{cell}</td>")
+            elif show_impact and j == len(cells) - 1:
                 tds_parts.append(f"<td class='{cls}'>{cell}</td>")
             else:
                 tds_parts.append(f"<td class='{cls}'>{_h(cell)}</td>")
@@ -217,6 +329,9 @@ def taxonomy_proposals_table_html(
     *,
     selectable: bool = False,
     checked_ids: frozenset[str] | None = None,
+    show_impact: bool = False,
+    preview_ids: frozenset[str] | None = None,
+    no_op_tuples: frozenset[tuple[str, str, str, str, str]] | None = None,
 ) -> str:
     headers = [
         "Tier1_Segment",
@@ -227,7 +342,11 @@ def taxonomy_proposals_table_html(
         "What's new",
         "Example ticket ids",
     ]
+    if show_impact:
+        headers.append(IMPACT_COLUMN_HEADING)
     num_cols = {5 if selectable else 4}
+    preview = preview_ids or frozenset()
+    no_ops = no_op_tuples or frozenset()
 
     sorted_items = sorted(proposals[:_MAX_TAX_ROWS], key=lambda p: p.tier[:4])
     prev: tuple[str | None, str | None, str | None, str | None] = (None, None, None, None)
@@ -258,11 +377,26 @@ def taxonomy_proposals_table_html(
                 ),
                 *cells,
             ]
-        row_cls = "zebra-even" if i % 2 == 1 else "zebra-odd"
+        row_classes = ["zebra-even" if i % 2 == 1 else "zebra-odd", "learn-row"]
+        if show_impact:
+            impact = _proposal_impact(
+                proposal_id=proposal.proposal_id,
+                tier=proposal.tier,
+                preview_ids=preview,
+                no_op_tuples=no_ops,
+            )
+            if impact == "none":
+                row_classes.append("learn-row--no-op")
+            elif impact == "yes":
+                row_classes.append("learn-row--impactful")
+            cells.append(_impact_badge_html(impact or "na"))
+        row_cls = " ".join(row_classes)
         tds_parts: list[str] = []
         for j, cell in enumerate(cells):
             cls = _cell_class(j, num_cols=num_cols, selectable=selectable)
             if selectable and j == 0:
+                tds_parts.append(f"<td class='{cls}'>{cell}</td>")
+            elif show_impact and j == len(cells) - 1:
                 tds_parts.append(f"<td class='{cls}'>{cell}</td>")
             else:
                 tds_parts.append(f"<td class='{cls}'>{_h(cell)}</td>")
@@ -346,6 +480,10 @@ def learn_proposals_html(
     drive_skip_reason: str | None = None,
     checked_rule_ids: frozenset[str] | None = None,
     checked_tax_ids: frozenset[str] | None = None,
+    show_impact: bool = False,
+    preview_rule_ids: frozenset[str] | None = None,
+    preview_tax_ids: frozenset[str] | None = None,
+    no_op_tuples: frozenset[tuple[str, str, str, str, str]] | None = None,
 ) -> str:
     if status == "live" and confirm_result is not None:
         return learn_confirm_success_html(
@@ -379,6 +517,16 @@ def learn_proposals_html(
             <input type="hidden" name="upload_id" value="{_h(upload_id)}">"""
         form_close = "</form>"
 
+    impact_summary = ""
+    if show_impact and preview_rule_ids is not None and preview_tax_ids is not None:
+        impact_summary = _learn_impact_summary_html(
+            result,
+            preview_rule_ids=preview_rule_ids,
+            preview_tax_ids=preview_tax_ids,
+            no_op_tuples=no_op_tuples or frozenset(),
+        )
+    no_ops = no_op_tuples or frozenset()
+
     if result.rule_proposals:
         more = ""
         if len(result.rule_proposals) > _MAX_RULE_ROWS:
@@ -386,22 +534,59 @@ def learn_proposals_html(
                 f'<p class="meta">Showing first {_MAX_RULE_ROWS} of '
                 f"{len(result.rule_proposals)} suggested rules.</p>"
             )
-        select_actions = _learn_select_actions_html("rule_ids") if selectable else ""
+        rules_deselect = ""
+        if (
+            selectable
+            and show_impact
+            and preview_rule_ids is not None
+            and _section_has_no_op(result.rule_proposals, preview_rule_ids, no_ops)
+        ):
+            rules_deselect = _learn_deselect_button_html("rule_ids")
+        select_actions = (
+            _learn_select_actions_html("rule_ids", deselect_html=rules_deselect) if selectable else ""
+        )
         parts.append(
             f"""<h2 class="section-header">Suggested rules ({len(result.rule_proposals)})</h2>
             <p class="meta">When a ticket matches the description, assign it to the category shown.</p>
             {more}
+            {impact_summary}
             {select_actions}
-            <div class="stats-wrap">{rule_proposals_table_html(result.rule_proposals, selectable=selectable, checked_ids=checked_rule_ids)}</div>"""
+            <div class="stats-wrap">{rule_proposals_table_html(
+                result.rule_proposals,
+                selectable=selectable,
+                checked_ids=checked_rule_ids,
+                show_impact=show_impact,
+                preview_ids=preview_rule_ids,
+                no_op_tuples=no_op_tuples,
+            )}</div>"""
         )
+        impact_summary = ""
 
     if result.taxonomy_proposals:
-        select_actions = _learn_select_actions_html("tax_ids") if selectable else ""
+        tax_deselect = ""
+        if (
+            selectable
+            and show_impact
+            and preview_tax_ids is not None
+            and _section_has_no_op(result.taxonomy_proposals, preview_tax_ids, no_ops)
+        ):
+            tax_deselect = _learn_deselect_button_html("tax_ids")
+        select_actions = (
+            _learn_select_actions_html("tax_ids", deselect_html=tax_deselect) if selectable else ""
+        )
         parts.append(
             f"""<h2 class="section-header">New category paths ({len(result.taxonomy_proposals)})</h2>
             <p class="meta">These tier combinations appear in your upload but are not in the current taxonomy.</p>
+            {impact_summary}
             {select_actions}
-            <div class="stats-wrap">{taxonomy_proposals_table_html(result.taxonomy_proposals, selectable=selectable, checked_ids=checked_tax_ids)}</div>"""
+            <div class="stats-wrap">{taxonomy_proposals_table_html(
+                result.taxonomy_proposals,
+                selectable=selectable,
+                checked_ids=checked_tax_ids,
+                show_impact=show_impact,
+                preview_ids=preview_tax_ids,
+                no_op_tuples=no_op_tuples,
+            )}</div>"""
         )
 
     if selectable and (result.rule_proposals or result.taxonomy_proposals):
@@ -535,13 +720,25 @@ def learn_process_body_html(
     preview_stale: bool = False,
     bad_satisfaction_only: bool = False,
     compute_no_op: bool = False,
+    preview_rule_ids: frozenset[str] | None = None,
+    preview_tax_ids: frozenset[str] | None = None,
+    no_op_tuples: frozenset[tuple[str, str, str, str, str]] | None = None,
 ) -> str:
+    show_impact = _learn_show_impact(
+        compute_no_op=compute_no_op,
+        batch_result=batch_result,
+        preview_stale=preview_stale,
+    )
     proposals = learn_proposals_html(
         result,
         upload_id,
         status="processed",
         checked_rule_ids=checked_rule_ids,
         checked_tax_ids=checked_tax_ids,
+        show_impact=show_impact,
+        preview_rule_ids=preview_rule_ids if show_impact else None,
+        preview_tax_ids=preview_tax_ids if show_impact else None,
+        no_op_tuples=no_op_tuples if show_impact else None,
     )
     preview = learn_preview_panel_html(
         upload_id,

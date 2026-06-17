@@ -1,6 +1,7 @@
 from cs_tickets.feedback.models import RuleProposal, TaxonomyProposal
 from cs_tickets.portal_learn import (
     learn_proposals_html,
+    learn_preview_results_html,
     match_consistency_plain,
     novelty_plain,
     rule_proposals_table_html,
@@ -247,3 +248,118 @@ def test_selectable_tables_include_select_all_for_rules_and_taxonomy() -> None:
     assert 'data-checkbox-name="tax_ids"' in html
     assert 'class="learn-row-chk"' in html
     assert "learn-select-all-btn" in html
+
+
+def test_learn_impact_column_and_deselect_after_no_op_preview() -> None:
+    from cs_tickets.feedback.parse import LearnParseResult
+
+    no_op_tier = ("B2C", "Service Task", "Sales Leads", "Rate or Renewal Inquiry", "N/A")
+    impactful_tier = ("B2B", "Other Stream", "Other Cat", "Other Type", "N/A")
+    rule_no_op = RuleProposal(
+        proposal_id="rule.no_op",
+        kind="any_tags",
+        tier=no_op_tier,
+        weight=10.0,
+        support=5,
+        purity=1.0,
+        any_tags=("noop_tag",),
+    )
+    rule_impact = RuleProposal(
+        proposal_id="rule.impact",
+        kind="any_tags",
+        tier=impactful_tier,
+        weight=10.0,
+        support=6,
+        purity=1.0,
+        any_tags=("impact_tag",),
+    )
+    preview_rules = frozenset({rule_no_op.proposal_id, rule_impact.proposal_id})
+    html = learn_proposals_html(
+        LearnParseResult(
+            upload_id="u",
+            filename="f.xlsx",
+            row_count=10,
+            eligible_row_count=10,
+            distinct_tier_paths=2,
+            rule_proposal_count=2,
+            taxonomy_proposal_count=0,
+            rule_proposals=(rule_no_op, rule_impact),
+        ),
+        "upload-123",
+        status="processed",
+        checked_rule_ids=preview_rules,
+        show_impact=True,
+        preview_rule_ids=preview_rules,
+        preview_tax_ids=frozenset(),
+        no_op_tuples=frozenset({no_op_tier}),
+    )
+    assert "Impact on export" in html
+    assert "Would change tickets" in html
+    assert "No impact" in html
+    assert "learn-deselect-no-op-btn" in html
+    assert 'data-checkbox-name="rule_ids"' in html
+    assert 'learn-deselect-no-op-btn" data-checkbox-name="tax_ids"' not in html
+    assert "deselect-no-op-tuples" not in html
+    assert 'learn-row--no-op' in html
+    assert "1 would change tickets, 1 have no impact" in html
+    assert "show-changed-details" not in html
+
+
+def test_learn_taxonomy_deselect_button_only_on_tax_section() -> None:
+    from cs_tickets.feedback.parse import LearnParseResult
+
+    no_op_tier = ("B2C", "Service Task", "General Support", "New Type", "N/A")
+    tax = TaxonomyProposal(
+        proposal_id="tax.no_op",
+        tier=no_op_tier,
+        count=3,
+        novelty_type="tier4_new",
+        evidence_ids=("1",),
+    )
+    preview_tax = frozenset({tax.proposal_id})
+    html = learn_proposals_html(
+        LearnParseResult(
+            upload_id="u",
+            filename="f.xlsx",
+            row_count=10,
+            eligible_row_count=10,
+            distinct_tier_paths=1,
+            rule_proposal_count=0,
+            taxonomy_proposal_count=1,
+            taxonomy_proposals=(tax,),
+        ),
+        "upload-123",
+        status="processed",
+        checked_tax_ids=preview_tax,
+        show_impact=True,
+        preview_rule_ids=frozenset(),
+        preview_tax_ids=preview_tax,
+        no_op_tuples=frozenset({no_op_tier}),
+    )
+    assert 'learn-deselect-no-op-btn" data-checkbox-name="tax_ids"' in html
+    assert 'learn-deselect-no-op-btn" data-checkbox-name="rule_ids"' not in html
+
+
+def test_learn_show_changed_details_in_preview_results() -> None:
+    from cs_tickets.allowlist_compare import AllowlistCompareResult
+
+    compare = AllowlistCompareResult(
+        total=1,
+        tbc_old=1,
+        tbc_new=0,
+        changed_rows=[
+            {
+                "id": "101",
+                "old_tier4": "Old",
+                "new_tier4": "New",
+                "outcome_type": "gap_fix",
+                "gap_fix_mechanism": "rule",
+                "new_tbc_reason": "matched",
+            }
+        ],
+        zero_candidate_old=0,
+        zero_candidate_new=0,
+    )
+    html = learn_preview_results_html(compare_result=compare)
+    assert "show-changed-details" in html
+    assert "training-changed-table" in html

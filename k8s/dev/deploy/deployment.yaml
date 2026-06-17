@@ -45,6 +45,8 @@ spec:
             items:
               - key: credentials.json
                 path: credentials.json
+        - name: runs-data
+          emptyDir: {}
       containers:
         - name: ${K8S_ENV_SLUG}-app-${K8S_PROJECT}
           image: "${CONTAINER_IMAGE}"
@@ -59,11 +61,19 @@ spec:
               value: "true"
             - name: GOOGLE_DRIVE_RUNS_FOLDER_ID
               value: "15H0su7yspJnDJCbauglYmjPA1FthVPGI"
+            - name: GOOGLE_DRIVE_LIVE_FOLDER_ID
+              value: "1on88itZr0gOuQtqEcrJo0eDnkFIQptPr"
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: "/config/credentials.json"
             - name: GOOGLE_DRIVE_SUPPORTS_ALL_DRIVES
+              value: "true"
+            - name: GOOGLE_DRIVE_USE_FULL_SCOPE
+              value: "true"
+            - name: RUNTIME_CONFIG_DRIVE_ENABLED
               value: "true"
           volumeMounts:
             - name: gcp-credentials
               mountPath: /config
               readOnly: true
+            - name: runs-data
+              mountPath: /app/runs

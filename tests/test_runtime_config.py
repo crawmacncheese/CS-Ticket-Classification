@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,6 +16,7 @@ from cs_tickets.runtime_config import (
     live_dir,
     load_runtime_allowlist,
     load_runtime_rule_specs,
+    refresh_live_from_drive,
 )
 from cs_tickets.taxonomy import load_allowlist
 
@@ -117,3 +119,37 @@ def test_drive_live_config_disabled_by_default() -> None:
     from cs_tickets.drive_live_config import drive_live_config_enabled
 
     assert drive_live_config_enabled() is False
+
+
+def test_bootstrap_prefers_references_over_doc(tmp_path: Path, repo_root: Path) -> None:
+    _seed_doc_tree(repo_root, tmp_path)
+    refs = tmp_path / "references"
+    refs.mkdir()
+    (refs / TAXONOMY_FILE).write_text(
+        "Tier1_Segment,Tier2_Stream,Tier3_Cat,Tier4_Type\nRefOnly,Stream,Cat,Type\n",
+        encoding="utf-8",
+    )
+    live = ensure_live_bootstrapped(tmp_path)
+    text = (live / TAXONOMY_FILE).read_text(encoding="utf-8")
+    assert "RefOnly" in text
+
+
+@patch("cs_tickets.runtime_config.sync_live_from_drive")
+def test_refresh_live_from_drive_when_enabled(
+    mock_sync: MagicMock,
+    tmp_path: Path,
+    repo_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_doc_tree(repo_root, tmp_path)
+    creds = tmp_path / "sa.json"
+    creds.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds))
+    monkeypatch.setenv("RUNTIME_CONFIG_DRIVE_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_DRIVE_LIVE_FOLDER_ID", "live-folder")
+    monkeypatch.setenv("DRIVE_UPLOAD_ENABLED", "true")
+
+    ensure_live_bootstrapped(tmp_path)
+    mock_sync.reset_mock()
+    refresh_live_from_drive(tmp_path)
+    mock_sync.assert_called_once()

@@ -166,25 +166,30 @@ When `doc/` and the reference workbook are writable (local dev), the index page 
 
 The **Training** flow (`/training`) lets analysts upload an already-classified `.xlsx`, review tier combinations that are new relative to the current allow-list, optionally run an NDJSON A/B preview (audit-style TBC metrics), and commit accepted tuples into `doc/CS_ticket_new_categorizations.xlsx`. Step 3 preview has the same optional **bad CSAT only** filter as the main Run page — metrics and changed-ticket samples then apply only to tickets with `satisfaction_rating.score == "bad"`.
 
-- **Local only:** Training is hidden when `doc/` or the reference workbook is not writable (e.g. read-only Azure deploy).
-- **Training Commit** writes to disk only — run `git diff doc/` and commit workbook changes to version control separately.
-- **Undo last update** restores the pre-commit filesystem snapshot; it does not undo a git commit. If you already committed to git, reconcile disk vs history manually.
-- Server restart drops in-progress Training sessions (same as classify runs).
+- **Learn New** (`/learn`) writes to `runs/live/` on Confirm; with Drive enabled, config is uploaded to the live folder (see below).
+- **Undo last update** on `/learn` restores from `runs/live/backup/{version}/`.
+- Server restart drops in-progress Learn upload sessions (same as classify runs).
 
 ### Runtime live config (`runs/live/`)
 
-The portal **New Upload** (`/run`) and CLI (default paths) load taxonomy, workbook, and rules from **`runs/live/`** after a one-time bootstrap from `doc/` + package `classifier_rules.json` + `doc/training_rules.json`. This matches the production GKE model: live config can later be updated without redeploy (Phase 2 Learn flow).
+The portal **New Upload** (`/run`), **Learn New** (`/learn` Confirm), and CLI (default paths) load taxonomy, workbook, and rules from **`runs/live/`**.
 
-| Path | Role |
+| Layer | Role |
+|-------|------|
+| **Google Drive `runs/live/`** | Deployed source of truth when `RUNTIME_CONFIG_DRIVE_ENABLED=true` |
+| **`runs/live/` on disk** | Pod-local cache (`/app/runs/live/` on GKE; `./runs/live/` locally) |
+| **`references/` → `doc/`** | Bootstrap seeds only when live files are missing |
+
+| File | Role |
 |------|------|
 | `runs/live/Taxonomy.csv` | Runtime taxonomy tree |
 | `runs/live/CS_ticket_new_categorizations.xlsx` | Runtime workbook 5-tuples |
-| `runs/live/classifier_rules.json` | Runtime rules (core + training merged on bootstrap) |
+| `runs/live/classifier_rules.json` | Runtime rules (package core + `doc/training_rules.json` merged on first bootstrap) |
 | `runs/live/config_version.json` | Version counter for cache invalidation |
 
-`runs/` is gitignored. Delete `runs/live/` locally to re-bootstrap from `doc/` after Training commits (until Phase 2 writes live config directly).
+`runs/` is gitignored. Local dev without Drive: delete `runs/live/` to re-bootstrap from `references/` or `doc/`.
 
-Optional Drive sync for live config (GKE):
+Drive sync for live config (GKE — required for multi-replica deployments):
 
 ```bash
 export RUNTIME_CONFIG_DRIVE_ENABLED=true
@@ -192,8 +197,10 @@ export GOOGLE_DRIVE_LIVE_FOLDER_ID=1on88itZr0gOuQtqEcrJo0eDnkFIQptPr
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/ai-daily-job-sa-key.json
 export GOOGLE_DRIVE_SUPPORTS_ALL_DRIVES=true
 export GOOGLE_DRIVE_USE_FULL_SCOPE=true
-# Also set DRIVE_UPLOAD_ENABLED + GOOGLE_DRIVE_RUNS_FOLDER_ID for run uploads
+# Also set DRIVE_UPLOAD_ENABLED + GOOGLE_DRIVE_RUNS_FOLDER_ID for run uploads and proposal bundles
 ```
+
+On Confirm, `/learn` uploads all four live files to Drive. Each classify run re-syncs from Drive when enabled so all pods share the same config.
 
 ### Google Drive upload (optional)
 
