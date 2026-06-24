@@ -5,22 +5,30 @@ from fastapi.testclient import TestClient
 
 from cs_tickets import portal_app
 from cs_tickets.portal_app import app
+from cs_tickets.portal_learn import learn_revert_footer_html
 
 client = TestClient(app)
+
+
+def test_learn_revert_footer_uses_copy_not_placeholders() -> None:
+    html = learn_revert_footer_html(show_revert=True)
+    assert "Undo Last Confirm" in html
+    assert "Restores the previous live settings" in html
+    assert "{LEARN_UNDO" not in html
 
 
 def test_index_links_to_learn() -> None:
     r = client.get("/")
     assert r.status_code == 200
     assert 'href="/learn"' in r.text
-    assert "Update reference categories" in r.text
+    assert "Add New Categories" in r.text
     assert "portal-topnav" in r.text
 
 
 def test_learn_index_has_process_form() -> None:
     r = client.get("/learn")
     assert r.status_code == 200
-    assert "Update reference categories" in r.text
+    assert "Add New Categories" in r.text
     assert 'action="/learn/process"' in r.text
     assert "SCMP_Tickets_Master_Categorized" in r.text
     assert 'name="workbook"' in r.text
@@ -44,15 +52,18 @@ def test_learn_process_workbook(repo_root: Path) -> None:
     )
     assert r.status_code == 200
     assert "rows parsed" in r.text
-    assert "suggested rules" in r.text
+    assert "suggested rules" in r.text.lower()
     assert "When tickets" in r.text
     assert 'class="stats-table"' in r.text
     assert "Confirm changes" in r.text
     assert "Cancel" in r.text
     assert 'formaction="/learn/cancel"' in r.text
     assert "learn-preview-section" in r.text
-    assert "Check impact on a ticket export" in r.text
-    assert "learn-preview-details" not in r.text
+    assert "Preview: see how this affects real tickets" in r.text
+    assert 'class="learn-preview-details"' in r.text
+    assert 'aria-label="Learn progress"' in r.text
+    assert "Session details" in r.text
+    assert 'class="session-details"' in r.text
     assert "any_tags:" not in r.text
     assert "Phase 2 stub" not in r.text
     assert len(portal_app._LEARN_UPLOADS) == 1
@@ -135,7 +146,7 @@ def test_learn_preview_ndjson(repo_root: Path, tmp_path: Path, monkeypatch: pyte
         },
     )
     assert preview.status_code == 200
-    assert "Preview results" in preview.text or "manual review" in preview.text
+    assert "preview results" in preview.text.lower() or "manual review" in preview.text.lower()
     assert record.preview_batch_result is not None
 
 

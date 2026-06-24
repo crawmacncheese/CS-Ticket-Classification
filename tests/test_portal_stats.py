@@ -7,6 +7,30 @@ from cs_tickets.portal_stats import (
 )
 
 
+def test_tbc_reason_summary_counts_match_headline_tbc() -> None:
+    from cs_tickets.portal_stats import classify_run_counts, tbc_reason_counts, tbc_reason_summary_html
+
+    tbc_reasons = {
+        "1": "zero_candidate",
+        "2": "lost_margin",
+        "3": "not_tbc",
+        "4": "other",
+    }
+    rows = [
+        {"Tier4_Type": "TBC (Manual Review)"},
+        {"Tier4_Type": "TBC (Manual Review)"},
+        {"Tier4_Type": "Rate or Renewal Inquiry"},
+        {"Tier4_Type": "TBC (Manual Review)"},
+    ]
+    headline = classify_run_counts(rows).tbc
+    counts = tbc_reason_counts(tbc_reasons)
+    assert sum(counts.values()) == headline
+    html = tbc_reason_summary_html(tbc_reasons, headline_tbc=headline)
+    assert "No rules matched" in html
+    assert "Contested" in html
+    assert "Why tickets need manual review" in html
+
+
 def test_is_manual_review_row() -> None:
     assert is_manual_review_row({"Tier4_Type": "TBC (Manual Review)"})
     assert not is_manual_review_row({"Tier4_Type": "Rate or Renewal Inquiry"})

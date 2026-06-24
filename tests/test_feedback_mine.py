@@ -113,6 +113,29 @@ def test_dedupe_keeps_strongest_overlapping_proposals() -> None:
     assert live_chat[0].kind == "all_tags"
 
 
+def test_mine_rules_handles_datetime_cells() -> None:
+    from datetime import datetime
+
+    tier = ("B2C", "Service Task", "Sales Leads", "Upgrade Inquiry", "N/A")
+    rows = [
+        {
+            "id": i,
+            "tags": '["custom_learn_tag_xyz"]',
+            "subject": datetime(2026, 5, 14, 10, 30),
+            "description": datetime(2026, 5, 14, 11, 0),
+            "Tier1_Segment": tier[0],
+            "Tier2_Stream": tier[1],
+            "Tier3_Cat": tier[2],
+            "Tier4_Type": tier[3],
+            "Granular_Tech_UI_Type": "N/A",
+        }
+        for i in range(1, 7)
+    ]
+    allow = AllowList(frozenset({tier, TIER_FALLBACK_B2C_TBC}))
+    proposals = mine_rule_proposals(rows, allow, config=MineConfig(skip_already_classified=True))
+    assert proposals
+
+
 def test_dedupe_collapses_live_chat_cluster_in_doc_workbook(repo_root: Path) -> None:
     xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
     tax = repo_root / "doc" / "Taxonomy.csv"

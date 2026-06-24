@@ -31,10 +31,10 @@ def portal_head(*, title: str, extra_scripts: list[str] | None = None) -> str:
     return f"""<meta charset="utf-8">
     <title>{_esc(title)}</title>
     <link rel="stylesheet" href="/static/agent_theme_1.css">
-    <link rel="stylesheet" href="/static/cs_tickets_theme.css?v=2">
+    <link rel="stylesheet" href="/static/cs_tickets_theme.css?v=4">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;family=Playfair+Display:wght@700&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet">
     {scripts}"""
 
 

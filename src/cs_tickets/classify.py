@@ -49,7 +49,17 @@ class ClassificationDecision:
     evidence: tuple[RuleEvidence, ...]
 
 
-def _tags_list(tags_cell: str | None) -> list[str]:
+def _text_lower(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).lower()
+
+
+def _tags_list(tags_cell: object) -> list[str]:
+    if tags_cell is None:
+        return []
+    if not isinstance(tags_cell, str):
+        tags_cell = str(tags_cell)
     if not tags_cell:
         return []
     try:
@@ -63,11 +73,11 @@ def _tags_list(tags_cell: str | None) -> list[str]:
 
 def _signals(row: dict[str, Any]) -> _RowSignals:
     tags_s = row.get("_enriched_tags") or row.get("tags")
-    tags = _tags_list(tags_s if isinstance(tags_s, str) else None)
+    tags = _tags_list(tags_s)
     tags_joined = " ".join(tags)
-    subject = str(row.get("subject") or "").lower()
-    raw_subject = str(row.get("raw_subject") or "").lower()
-    desc = str(row.get("description") or "").lower()
+    subject = _text_lower(row.get("subject"))
+    raw_subject = _text_lower(row.get("raw_subject"))
+    desc = _text_lower(row.get("description"))
     thread = str(row.get("_thread_blob") or "")
     blob = f"{subject} {raw_subject} {desc} {thread}".strip()
     is_reply = bool(row.get("_is_reply")) or (
@@ -84,7 +94,7 @@ def _signals(row: dict[str, Any]) -> _RowSignals:
         blob_500=blob[:500],
         blob_600=blob[:600],
         blob_1200=blob[:1200],
-        url=str(row.get("url") or "").lower(),
+        url=_text_lower(row.get("url")),
         is_reply=is_reply,
     )
 
@@ -641,9 +651,33 @@ def classify_row(row: dict[str, Any], allow: AllowList) -> tuple[str, str, str, 
     return classify_row_with_explanation(row, allow).tier
 
 
-def attach_tiers(row: dict[str, Any], allow: AllowList) -> tuple[dict[str, Any], str | None]:
-    """Return full master row dict with tier columns; optional warning if coerced."""
-    tier = classify_row(row, allow)
+def _is_tbc_decision(decision: ClassificationDecision) -> bool:
+    """Same as allowlist_compare._is_tbc and tbc_trends._is_tbc."""
+    return decision.fallback_used or "tbc" in decision.tier[3].lower()
+
+
+def portal_reason_bucket(
+    decision: ClassificationDecision,
+    *,
+    output_row: dict[str, Any] | None = None,
+) -> str:
+    """Map a classification decision → display bucket code for portal / audit alignment."""
+    from cs_tickets.portal_stats import is_manual_review_row
+
+    if _is_tbc_decision(decision):
+        reason = tbc_reason(decision)
+        return "other" if reason == "not_tbc" else reason
+    if output_row is not None and is_manual_review_row(output_row):
+        return "other"
+    return "not_tbc"
+
+
+def attach_tiers_with_meta(
+    row: dict[str, Any], allow: AllowList
+) -> tuple[dict[str, Any], str | None, str]:
+    """Return master row, optional warning, and portal TBC reason bucket."""
+    decision = classify_row_with_explanation(row, allow)
+    tier = decision.tier
     warn: str | None = None
     if tier not in allow:
         tier = DEFAULT_TBC if DEFAULT_TBC in allow else next(iter(sorted(allow.tuples)))
@@ -654,4 +688,12 @@ def attach_tiers(row: dict[str, Any], allow: AllowList) -> tuple[dict[str, Any],
     final = tuple(out[c] for c in TIER_COLUMNS)
     if final not in allow:
         warn = warn or "tier_still_invalid"
-    return strip_enrichment(out), warn
+    out = strip_enrichment(out)
+    reason = portal_reason_bucket(decision, output_row=out)
+    return out, warn, reason
+
+
+def attach_tiers(row: dict[str, Any], allow: AllowList) -> tuple[dict[str, Any], str | None]:
+    """Return full master row dict with tier columns; optional warning if coerced."""
+    out, warn, _ = attach_tiers_with_meta(row, allow)
+    return out, warn

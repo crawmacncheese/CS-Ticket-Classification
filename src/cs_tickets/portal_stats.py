@@ -6,6 +6,12 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from cs_tickets.portal_copy import (
+    TBC_REASON_DISPLAY_BUCKETS,
+    TBC_REASON_LABELS,
+    TBC_REASON_SUMMARY_HEADING,
+)
+
 TIER_KEYS = ("Tier1_Segment", "Tier2_Stream", "Tier3_Cat", "Tier4_Type")
 
 
@@ -59,6 +65,35 @@ def classify_run_summary_html(rows: list[dict[str, Any]], *, warns: int = 0) -> 
   </span>
   <span class="run-summary-split">B2B: {counts.tbc_b2b} · B2C: {counts.tbc_b2c}</span>
   {warn_line}
+</div>""".strip()
+
+
+def tbc_reason_counts(tbc_reasons: dict[str, str]) -> Counter[str]:
+    """Count portal reason buckets, excluding not_tbc."""
+    counts: Counter[str] = Counter()
+    for reason in tbc_reasons.values():
+        if reason != "not_tbc":
+            counts[reason] += 1
+    return counts
+
+
+def tbc_reason_summary_html(tbc_reasons: dict[str, str], *, headline_tbc: int) -> str:
+    """Five-bucket TBC reason breakdown for classify results."""
+    counts = tbc_reason_counts(tbc_reasons)
+    items: list[str] = []
+    for bucket in TBC_REASON_DISPLAY_BUCKETS:
+        n = counts.get(bucket, 0)
+        label = TBC_REASON_LABELS[bucket]
+        items.append(
+            f'<li class="tbc-reason-item" title="{_h(bucket)}">'
+            f'<span class="tbc-reason-label">{_h(label)}</span> '
+            f'<span class="tbc-reason-count">{n}</span></li>'
+        )
+    return f"""
+<div class="tbc-reason-summary" role="region" aria-label="{_h(TBC_REASON_SUMMARY_HEADING)}">
+  <h3 class="section-header tbc-reason-summary-heading">{_h(TBC_REASON_SUMMARY_HEADING)}</h3>
+  <ul class="tbc-reason-list">{"".join(items)}</ul>
+  <p class="meta tbc-reason-total-hint">{headline_tbc} tickets need manual review in this run.</p>
 </div>""".strip()
 
 

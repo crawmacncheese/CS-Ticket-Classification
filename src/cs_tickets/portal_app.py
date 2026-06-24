@@ -30,6 +30,8 @@ from cs_tickets.portal_learn import (
     learn_proposals_html,
     learn_revert_footer_html,
     learn_selection_hash,
+    learn_session_details_html,
+    learn_wizard_html,
 )
 from cs_tickets.repo_paths import resolve_repo_root
 from cs_tickets.runtime_config import (
@@ -44,7 +46,7 @@ from cs_tickets.drive_upload import (
     drive_upload_configured,
     try_upload_workbook,
 )
-from cs_tickets.pipeline import iter_master_rows
+from cs_tickets.pipeline import iter_master_rows_with_meta
 from cs_tickets.portal_copy import (
     CATEGORY_BREAKDOWN_HEADING,
     CATEGORY_BREAKDOWN_META,
@@ -54,6 +56,11 @@ from cs_tickets.portal_copy import (
     CLASSIFY_RUN_BUTTON,
     CLASSIFY_RUN_LOADING,
     DOWNLOAD_WORKBOOK_LABEL,
+    LEARN_PROCESS_BUTTON,
+    LEARN_TRY_AGAIN_LABEL,
+    LEARN_UPLOAD_ANOTHER_LABEL,
+    NAV_RUN_HISTORY,
+    NAV_TBC_TRENDS,
     NEW_UPLOAD_LABEL,
     REFERENCE_CATEGORIES_PAGE_INTRO,
     REFERENCE_CATEGORIES_PAGE_TITLE,
@@ -62,7 +69,13 @@ from cs_tickets.portal_copy import (
     TICKET_PREVIEW_HEADING,
 )
 from cs_tickets.portal_layout import portal_page_html
-from cs_tickets.portal_stats import classify_run_summary_html, tier_stats_table_html
+from cs_tickets.portal_stats import (
+    classify_run_counts,
+    classify_run_summary_html,
+    tier_stats_table_html,
+    tbc_reason_summary_html,
+)
+from cs_tickets.portal_ticket_preview import ticket_preview_html
 from cs_tickets.portal_trends import (
     dashboard_body_html,
     dashboard_empty_html,
@@ -101,6 +114,7 @@ app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 @dataclass
 class _RunRecord:
     rows: list[dict]
+    tbc_reasons: dict[str, str]
     source_filename: str
     warns: int
     workbook_filename: str
@@ -144,8 +158,9 @@ def _drop_learn_upload(upload_id: str) -> None:
 def _learn_error_html(message: str) -> str:
     body = f"""
     <h1 class="page-header">{REFERENCE_CATEGORIES_PAGE_TITLE}</h1>
+    {learn_wizard_html(1)}
     <p class="meta drive-warning" role="alert">{_esc(message)}</p>
-    <p class="links"><a href="/learn" class="btn">Try again</a></p>
+    <p class="links"><a href="/learn" class="btn">{LEARN_TRY_AGAIN_LABEL}</a></p>
     """
     return portal_page_html(
         title=REFERENCE_CATEGORIES_PAGE_TITLE,
@@ -168,9 +183,10 @@ def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
     current_tax = checked_tax if checked_tax is not None else default_tax
     preview_stale = (
         record.preview_selection_hash is not None
-        and record.preview_selection_hash
-        != learn_selection_hash(current_rules, current_tax)
+        and record.preview_selection_hash != learn_selection_hash(current_rules, current_tax)
     )
+    preview_completed = record.preview_batch_result is not None
+    wizard_step = 4 if preview_completed else 2
     summary_meta = (
         f"{result.rule_proposal_count} suggested rules · "
         f"{result.taxonomy_proposal_count} new category paths"
@@ -189,20 +205,26 @@ def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
         preview_tax_ids=record.preview_tax_ids,
         no_op_tuples=record.preview_no_op_tuples,
     )
+    session_details = learn_session_details_html(
+        filename=result.filename,
+        upload_id=upload_id,
+        distinct_tier_paths=result.distinct_tier_paths,
+        eligible_row_count=result.eligible_row_count,
+    )
     page_body = f"""
+    {learn_wizard_html(wizard_step, preview_completed=preview_completed)}
     <p class="run-summary" role="status">
         <span class="run-summary-lead">{result.row_count} rows parsed</span>
         <span class="run-summary-meta">({summary_meta})</span>
     </p>
-    <p class="meta learn-ok">Processed <strong>{_esc(result.filename)}</strong> — upload id <code>{_esc(upload_id)}</code></p>
-    <p class="meta">{result.distinct_tier_paths} distinct categories in upload · {result.eligible_row_count} rows used for learning</p>
+    {session_details}
     {body}
     """
     return portal_page_html(
         title=REFERENCE_CATEGORIES_PAGE_TITLE,
         active="learn",
         body=page_body,
-        extra_scripts=["/static/training.js?v=4"],
+        extra_scripts=["/static/training.js?v=5", "/static/ticket_preview.js?v=2"],
     )
 
 
@@ -245,7 +267,7 @@ def _classify_run_actions_html(run_id: str, *, primary: bool = False) -> str:
     <p class="run-actions">
         <a href="/download/{_esc(run_id)}" class="btn{primary_cls}">{DOWNLOAD_WORKBOOK_LABEL}</a>
         <a href="/" class="btn btn-secondary">{NEW_UPLOAD_LABEL}</a>
-        <a href="{_esc(drive_runs_folder_url())}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Run history</a>
+        <a href="{_esc(drive_runs_folder_url())}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">{NAV_RUN_HISTORY}</a>
     </p>"""
 
 
@@ -294,15 +316,18 @@ async def run_upload(
         data = await export.read()
         tmp_path.write_bytes(data)
         rows: list[dict] = []
+        tbc_reasons: dict[str, str] = {}
         warns = 0
         try:
-            for row, warn in iter_master_rows(
+            for row, warn, reason in iter_master_rows_with_meta(
                 tmp_path,
                 allow,
                 bad_satisfaction_only=bad_satisfaction_only,
             ):
                 if warn:
                     warns += 1
+                ticket_id = str(row.get("id") or "")
+                tbc_reasons[ticket_id] = reason
                 rows.append({k: row.get(k) for k in MASTER_COLUMNS})
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -333,35 +358,35 @@ async def run_upload(
         )
         _RUNS[run_id] = _RunRecord(
             rows=rows,
+            tbc_reasons=tbc_reasons,
             source_filename=source_filename,
             warns=warns,
             workbook_filename=workbook_filename,
             drive=drive_result,
             drive_error=drive_error,
         )
-        preview = rows[:200]
+        counts = classify_run_counts(rows)
+        summary_block = classify_run_summary_html(rows, warns=warns)
+        reason_block = tbc_reason_summary_html(tbc_reasons, headline_tbc=counts.tbc)
         stats_block = tier_stats_table_html(rows)
-        headers = "".join(f"<th>{h}</th>" for h in MASTER_COLUMNS)
-        body_rows = ""
-        for r in preview:
-            body_rows += "<tr>" + "".join(f"<td>{_esc(r.get(h))}</td>" for h in MASTER_COLUMNS) + "</tr>"
+        preview_block = ticket_preview_html(rows, tbc_reasons=tbc_reasons)
         drive_html = _drive_result_html(drive_result, drive_error)
         filter_note = ""
         if bad_satisfaction_only:
             filter_note = '<p class="meta run-filter-note">This run included only tickets with a bad CSAT rating.</p>'
-        summary_block = classify_run_summary_html(rows, warns=warns)
         trends_html = ""
         if trends_snapshot is not None:
             snap_rows, snap_tbc = trends_snapshot
             snap_pct = f"{100.0 * snap_tbc / snap_rows:.1f}%" if snap_rows else "0.0%"
             trends_html = (
                 f'<p class="meta trends-snapshot-ok">'
-                f"Added to <a href=\"/dashboard\">TBC trends</a>: "
+                f"Added to <a href=\"/dashboard\">{NAV_TBC_TRENDS}</a>: "
                 f"{snap_rows} tickets ({snap_tbc} manual review, {snap_pct}).</p>"
             )
         run_actions = _classify_run_actions_html(run_id, primary=True)
         body = f"""
     {summary_block}
+    {reason_block}
     {filter_note}
     {trends_html}
     {run_actions}
@@ -373,13 +398,7 @@ async def run_upload(
     <div class="stats-wrap">{stats_block}</div>
 
     <h2 class="section-header">{TICKET_PREVIEW_HEADING}</h2>
-    <p class="meta">First {len(preview)} rows of the master table.</p>
-    <div class="preview-wrap">
-        <table class="preview-table">
-            <thead><tr>{headers}</tr></thead>
-            <tbody>{body_rows}</tbody>
-        </table>
-    </div>
+    {preview_block}
 
     {_classify_technical_details_html()}
     """
@@ -387,6 +406,7 @@ async def run_upload(
             title="Categorization results",
             active="categorize",
             body=body,
+            extra_scripts=["/static/ticket_preview.js?v=2"],
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -475,7 +495,7 @@ def learn_index() -> str:
         <div class="upload-card">
             <form class="upload-form" action="/learn/process" method="post" enctype="multipart/form-data">
                 <input type="file" name="workbook" class="file-input" accept=".xlsx" required>
-                <button type="submit" class="btn btn-primary">Process</button>
+                <button type="submit" class="btn btn-primary">{LEARN_PROCESS_BUTTON}</button>
             </form>
         </div>
     </div>
@@ -520,6 +540,10 @@ async def learn_process(workbook: UploadFile = File(...)) -> str:
     except ValueError as exc:
         shutil.rmtree(tmpdir, ignore_errors=True)
         return _learn_error_html(str(exc))
+    except Exception as exc:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        logger.exception("Learn process failed for %s", source_filename)
+        return _learn_error_html(f"Could not process workbook: {exc}")
 
     _LEARN_UPLOADS[upload_id] = _LearnRecord(
         result=result,
@@ -625,7 +649,7 @@ async def learn_confirm(
         drive_error=record.drive_error,
         drive_skip_reason=record.drive_skip_reason,
     )}
-    <p class="links"><a href="/learn" class="btn">Upload another</a></p>
+    <p class="links"><a href="/learn" class="btn">{LEARN_UPLOAD_ANOTHER_LABEL}</a></p>
     """
         return portal_page_html(
             title=REFERENCE_CATEGORIES_PAGE_TITLE,
@@ -679,7 +703,7 @@ async def learn_confirm(
     )}
     <p class="links">
         <a href="/" class="btn btn-primary">{NEW_UPLOAD_LABEL}</a>
-        <a href="/learn" class="btn">Upload another</a>
+        <a href="/learn" class="btn">{LEARN_UPLOAD_ANOTHER_LABEL}</a>
     </p>
     {revert_footer}
     """
@@ -710,7 +734,7 @@ async def learn_revert() -> str:
     <h1 class="page-header">{REFERENCE_CATEGORIES_PAGE_TITLE}</h1>
     <p class="run-summary" role="status">Restored live config to version {restored_version}.</p>
     <p class="meta">The next categorisation run will use the reverted allow-list and rules.</p>
-    <p class="links"><a href="/learn" class="btn">Upload another</a></p>
+    <p class="links"><a href="/learn" class="btn">{LEARN_UPLOAD_ANOTHER_LABEL}</a></p>
     {revert_footer}
     """
     return portal_page_html(

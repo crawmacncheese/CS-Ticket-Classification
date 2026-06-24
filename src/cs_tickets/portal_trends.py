@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from cs_tickets.portal_copy import NAV_TBC_TRENDS
 from cs_tickets.portal_layout import portal_page_html
 from cs_tickets.tbc_trends import (
     DashboardSnapshot,
@@ -23,10 +24,9 @@ from cs_tickets.tbc_trends import (
     trends_snapshot_enabled,
 )
 
-DASHBOARD_TITLE = "TBC trends"
+DASHBOARD_TITLE = NAV_TBC_TRENDS
 DASHBOARD_INTRO = (
-    "Manual review (TBC) rate and hotspots by week, tag, and subject cluster. "
-    "Data comes from classified export snapshots."
+    "How often tickets need manual review, and what they have in common."
 )
 
 
@@ -88,10 +88,10 @@ def weekly_trend_table_html(rows: list[WeeklyRollupRow]) -> str:
             f"<td class='trend-bar-cell'>{_pct_bar(r.tbc_pct, max_pct=max_pct)}</td>"
             f"</tr>"
         )
-    headers = ["Week", "Tickets", "TBC", "TBC %", "B2B TBC", "B2C TBC", "Trend"]
+    headers = ["Week", "Tickets", "Manual Review", "Review %", "B2B Review", "B2C Review", "Trend"]
     th = "".join(f"<th>{_h(c)}</th>" for c in headers)
     return f"""
-<table class="stats-table trends-table" aria-label="Weekly TBC rate">
+<table class="stats-table trends-table" aria-label="Manual Review Over Time">
   <thead><tr>{th}</tr></thead>
   <tbody>{"".join(body)}</tbody>
 </table>""".strip()
@@ -116,9 +116,9 @@ def tag_hotspots_table_html(tag_rows: list[dict[str, Any]], *, latest_week_only:
             f"<td class='trend-bar-cell'>{_pct_bar(float(r['tbc_count']), max_pct=float(max_count))}</td>"
             f"</tr>"
         )
-    th = "".join(f"<th>{_h(c)}</th>" for c in ["Week", "Tag", "TBC count", ""])
+    th = "".join(f"<th>{_h(c)}</th>" for c in ["Week", "Tag", "Review Count", ""])
     return f"""
-<table class="stats-table trends-table" aria-label="Top TBC tags">
+<table class="stats-table trends-table" aria-label="Tags On Review Tickets">
   <thead><tr>{th}</tr></thead>
   <tbody>{"".join(body)}</tbody>
 </table>""".strip()
@@ -143,10 +143,10 @@ def subject_cluster_table_html(cluster_rows: list[dict[str, Any]], *, limit: int
             f"</tr>"
         )
     th = "".join(
-        f"<th>{_h(c)}</th>" for c in ["Week", "Cluster", "Example subject", "TBC", ""]
+        f"<th>{_h(c)}</th>" for c in ["Week", "Subject Group", "Example Subject", "Manual Review", ""]
     )
     return f"""
-<table class="stats-table trends-table" aria-label="Top subject clusters">
+<table class="stats-table trends-table" aria-label="Common Subject Lines">
   <thead><tr>{th}</tr></thead>
   <tbody>{"".join(body)}</tbody>
 </table>""".strip()
@@ -163,9 +163,9 @@ def tbc_reason_table_html(reason_rows: list[dict[str, Any]]) -> str:
         parts = ", ".join(f"{_h(r['tbc_reason'])}: {r['tbc_count']}" for r in by_week[week])
         row_cls = "zebra-even" if i % 2 == 1 else "zebra-odd"
         body.append(f"<tr class='{row_cls}'><td class='txt'>{_h(week)}</td><td class='txt'>{parts}</td></tr>")
-    th = "".join(f"<th>{_h(c)}</th>" for c in ["Week", "Reason mix"])
+    th = "".join(f"<th>{_h(c)}</th>" for c in ["Week", "Reasons"])
     return f"""
-<table class="stats-table trends-table" aria-label="TBC reason mix by week">
+<table class="stats-table trends-table" aria-label="Why The System Couldn't Decide">
   <thead><tr>{th}</tr></thead>
   <tbody>{"".join(body)}</tbody>
 </table>""".strip()
@@ -189,9 +189,11 @@ def exports_table_html(exports: list[dict[str, Any]]) -> str:
             f"<td class='txt'><code>{_h(ex['classifier_version'])}</code></td>"
             f"</tr>"
         )
-    th = "".join(f"<th>{_h(c)}</th>" for c in ["Export", "Rows", "TBC", "Captured", "Classifier"])
+    th = "".join(
+        f"<th>{_h(c)}</th>" for c in ["Export File", "Rows", "Manual Review", "Captured", "Classifier"]
+    )
     return f"""
-<table class="stats-table trends-table" aria-label="Ingested snapshots">
+<table class="stats-table trends-table" aria-label="Exports Used For This Report">
   <thead><tr>{th}</tr></thead>
   <tbody>{"".join(body)}</tbody>
 </table>""".strip()
@@ -205,7 +207,7 @@ def trend_events_html(events: list[TrendEvent]) -> str:
         for e in events
     )
     return f"""
-<h2 class="section-header">Rule batches &amp; milestones</h2>
+<h2 class="section-header">Config Changes (Optional)</h2>
 <p class="meta">From <code>events.json</code> (optional).</p>
 <ul class="trend-events">{items}</ul>""".strip()
 
@@ -235,25 +237,25 @@ def dashboard_body_html(
 {auto_note}
 {dashboard_headline_html(snapshot)}
 
-<h2 class="section-header">Weekly TBC rate</h2>
-<p class="meta">ISO week of ticket <code>created_at</code>.</p>
+<h2 class="section-header">Manual Review Over Time</h2>
+<p class="meta">Tickets per week and what share needed a person to categorize.</p>
 <div class="stats-wrap">{weekly_trend_table_html(weekly)}</div>
 
-<h2 class="section-header">Top TBC tags</h2>
+<h2 class="section-header">Tags On Review Tickets</h2>
 <p class="meta">Tags on manual-review tickets (latest week when available).</p>
 <div class="stats-wrap">{tag_hotspots_table_html(tag_rows)}</div>
 
-<h2 class="section-header">Subject clusters</h2>
-<p class="meta">Normalized subject fingerprints on TBC rows.</p>
+<h2 class="section-header">Common Subject Lines</h2>
+<p class="meta">Grouped email subjects for manual-review tickets, with an example from each group.</p>
 <div class="stats-wrap">{subject_cluster_table_html(cluster_rows)}</div>
 
-<h2 class="section-header">Why TBC</h2>
+<h2 class="section-header">Why The System Couldn't Decide</h2>
 <p class="meta">Classifier reason buckets per week.</p>
 <div class="stats-wrap">{tbc_reason_table_html(reason_rows)}</div>
 
 {events_block}
 
-<h2 class="section-header">Snapshots</h2>
+<h2 class="section-header">Exports Used For This Report</h2>
 <div class="stats-wrap">{exports_table_html(exports)}</div>
 """.strip()
 

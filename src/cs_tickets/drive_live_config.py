@@ -124,7 +124,16 @@ def sync_live_from_drive(live_dir: Path) -> str | None:
             remote = find_child_file(service, folder_id, filename)
             if not remote or not remote.get("id"):
                 continue
-            payload = download_file_bytes(service, str(remote["id"]))
+            try:
+                payload = download_file_bytes(service, str(remote["id"]))
+            except Exception as exc:
+                logger.warning(
+                    "Skipping Drive live config file %s (%s): %s",
+                    filename,
+                    remote.get("id"),
+                    exc,
+                )
+                continue
             (live_dir / filename).write_bytes(payload)
             downloaded += 1
         if downloaded:

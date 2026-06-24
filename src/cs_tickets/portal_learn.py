@@ -10,21 +10,51 @@ from cs_tickets.feedback.ids import normalize_ticket_id
 from cs_tickets.feedback.models import RuleProposal, TaxonomyProposal
 from cs_tickets.feedback.parse import LearnParseResult
 from cs_tickets.feedback.promote import ConfirmResult
-from cs_tickets.portal_training import training_changed_rows_html, training_verdict_banner_html
-from cs_tickets.portal_training_copy import (
+from cs_tickets.portal_copy import LEARN_UNDO_LAST_CONFIRM, LEARN_UNDO_NOTE
+from cs_tickets.portal_training import (
+    _golden_baseline_hint_html,
+    training_changed_rows_html,
+    training_verdict_banner_html,
+)
+from cs_tickets.portal_learn_copy import (
     CANCEL_LABEL,
+    CONFIRM_APPLIES_NOTE,
+    CONFIRM_DIALOG_LEAD,
+    CONFIRM_DIALOG_SUFFIX,
+    CONFIRM_RISKY_WARNING,
+    LEARN_STEP_LABELS,
+    PREVIEW_BUTTON,
+    PREVIEW_DETAILS_SUMMARY,
+    PREVIEW_FIRST_TIME_NUDGE,
+    PREVIEW_FILE_LABEL,
+    PREVIEW_FILE_STEP_2,
+    PREVIEW_FILE_STEP_3,
+    PREVIEW_HELP,
+    PREVIEW_LOADING,
+    PREVIEW_NO_OP_HINT,
+    PREVIEW_NO_OP_LABEL,
+    PREVIEW_NO_OP_RULES_NEEDED_HINT,
+    PREVIEW_RESULTS_HEADING,
+    PREVIEW_SKIP_NOTE,
+    RULES_SECTION_INTRO,
+    RULES_TABLE_SUMMARY,
+    SESSION_DETAILS_SUMMARY,
+    STALE_PREVIEW_CONFIRM_WARNING,
+    TAXONOMY_SECTION_INTRO,
+    TAXONOMY_TABLE_SUMMARY,
+    TBC_FOOTNOTE,
+    CHANGED_TICKETS_SUMMARY,
+    METRICS_TABLE_SUMMARY,
+    VERDICT_NEXT_STEPS,
+    VERDICT_STAT_LABELS,
+)
+from cs_tickets.portal_training_copy import (
     DESELECT_NO_OP_BUTTON,
     IMPACT_COLUMN_HEADING,
     IMPACT_NO_EFFECT,
     IMPACT_NOT_ANALYZED,
     IMPACT_SUMMARY,
     IMPACT_WOULD_CHANGE,
-    PREVIEW_BUTTON,
-    PREVIEW_HELP,
-    PREVIEW_LOADING,
-    PREVIEW_NO_OP_LABEL,
-    PREVIEW_RESULTS_HEADING,
-    PREVIEW_STEP_HEADING,
 )
 
 _MAX_RULE_ROWS = 40
@@ -120,6 +150,67 @@ def learn_selection_hash(
 ) -> str:
     parts = sorted(rule_ids) + sorted(tax_ids)
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+
+def learn_wizard_html(active_step: int, *, preview_completed: bool = False) -> str:
+    items: list[str] = []
+    for i, label in enumerate(LEARN_STEP_LABELS, start=1):
+        classes = ["wizard-step"]
+        if i < active_step:
+            classes.append("wizard-step--done")
+        elif i == active_step:
+            classes.append("wizard-step--active")
+        if i == 3 and not preview_completed and active_step <= 3:
+            classes.append("wizard-step--optional")
+        step_label = _h(label)
+        if i == 3 and active_step >= 2:
+            step_label = f'<a href="#learn-preview-details" class="wizard-step-link">{step_label}</a>'
+        items.append(f'<li class="{" ".join(classes)}">{i}. {step_label}</li>')
+    return f"""
+<nav class="learn-wizard training-wizard" aria-label="Learn progress">
+  <ol>{"".join(items)}</ol>
+</nav>"""
+
+
+def learn_session_details_html(
+    *,
+    filename: str,
+    upload_id: str,
+    distinct_tier_paths: int,
+    eligible_row_count: int,
+) -> str:
+    return f"""
+<details class="session-details">
+    <summary>{SESSION_DETAILS_SUMMARY}</summary>
+    <p class="meta">Processed <strong>{_h(filename)}</strong></p>
+    <p class="meta">Upload id: <code>{_h(upload_id)}</code></p>
+    <p class="meta">{distinct_tier_paths} distinct categories in upload · {eligible_row_count} rows used for learning</p>
+</details>""".strip()
+
+
+def _learn_collapsible_section_html(
+    summary: str,
+    body: str,
+    *,
+    section_class: str = "",
+    open_default: bool = True,
+) -> str:
+    open_attr = " open" if open_default else ""
+    extra = f" {section_class}" if section_class else ""
+    return (
+        f'<details class="learn-table-collapse{extra}"{open_attr}>'
+        f"<summary>{_h(summary)}</summary>{body}</details>"
+    )
+
+
+def _learn_preview_file_guidance_html() -> str:
+    return f"""
+<label for="learn-preview-file" class="preview-file-label">{_h(PREVIEW_FILE_LABEL)}</label>
+<ol class="preview-file-steps">
+    <li>Export tickets from Zendesk — same format as the <a href="/">Categorize tickets</a> page.</li>
+    <li>{_h(PREVIEW_FILE_STEP_2)}</li>
+    <li>{_h(PREVIEW_FILE_STEP_3)}</li>
+</ol>""".strip()
 
 
 def _learn_show_impact(
@@ -545,9 +636,8 @@ def learn_proposals_html(
         select_actions = (
             _learn_select_actions_html("rule_ids", deselect_html=rules_deselect) if selectable else ""
         )
-        parts.append(
-            f"""<h2 class="section-header">Suggested rules ({len(result.rule_proposals)})</h2>
-            <p class="meta">When a ticket matches the description, assign it to the category shown.</p>
+        rules_body = f"""
+            <p class="meta section-intro">{RULES_SECTION_INTRO}</p>
             {more}
             {impact_summary}
             {select_actions}
@@ -559,6 +649,12 @@ def learn_proposals_html(
                 preview_ids=preview_rule_ids,
                 no_op_tuples=no_op_tuples,
             )}</div>"""
+        parts.append(
+            _learn_collapsible_section_html(
+                RULES_TABLE_SUMMARY.format(n=len(result.rule_proposals)),
+                rules_body,
+                section_class="learn-rules-collapse",
+            )
         )
         impact_summary = ""
 
@@ -574,9 +670,8 @@ def learn_proposals_html(
         select_actions = (
             _learn_select_actions_html("tax_ids", deselect_html=tax_deselect) if selectable else ""
         )
-        parts.append(
-            f"""<h2 class="section-header">New category paths ({len(result.taxonomy_proposals)})</h2>
-            <p class="meta">These tier combinations appear in your upload but are not in the current taxonomy.</p>
+        tax_body = f"""
+            <p class="meta section-intro">{TAXONOMY_SECTION_INTRO}</p>
             {impact_summary}
             {select_actions}
             <div class="stats-wrap">{taxonomy_proposals_table_html(
@@ -587,6 +682,12 @@ def learn_proposals_html(
                 preview_ids=preview_tax_ids,
                 no_op_tuples=no_op_tuples,
             )}</div>"""
+        parts.append(
+            _learn_collapsible_section_html(
+                TAXONOMY_TABLE_SUMMARY.format(n=len(result.taxonomy_proposals)),
+                tax_body,
+                section_class="learn-taxonomy-collapse",
+            )
         )
 
     if selectable and (result.rule_proposals or result.taxonomy_proposals):
@@ -595,11 +696,34 @@ def learn_proposals_html(
     return "\n".join(parts)
 
 
-def learn_confirm_bar_html() -> str:
-    return f"""<div class="learn-confirm-bar">
-        <p class="meta">Confirm applies to the <strong>next categorisation run</strong> immediately (config version will increment).</p>
+def learn_confirm_bar_html(
+    *,
+    preview_run: bool = False,
+    preview_stale: bool = False,
+    verdict_band: str | None = None,
+) -> str:
+    nudge = ""
+    if not preview_run:
+        nudge = f'<p class="meta learn-preview-nudge">{PREVIEW_FIRST_TIME_NUDGE}</p>'
+    stale_warning = ""
+    if preview_stale:
+        stale_warning = (
+            f'<p class="training-stale-banner" role="status">{STALE_PREVIEW_CONFIRM_WARNING}</p>'
+        )
+    data_attrs = (
+        f' data-confirm-risky="{_h(CONFIRM_RISKY_WARNING)}"'
+        f' data-confirm-lead="{_h(CONFIRM_DIALOG_LEAD)}"'
+        f' data-confirm-suffix="{_h(CONFIRM_DIALOG_SUFFIX)}"'
+    )
+    if preview_run and verdict_band:
+        data_attrs += f' data-verdict="{_h(verdict_band)}"'
+    return f"""<div class="learn-confirm-bar" id="learn-confirm-bar"{data_attrs}>
+        <p class="meta">{CONFIRM_APPLIES_NOTE}</p>
+        <p class="meta learn-preview-skip">{PREVIEW_SKIP_NOTE}</p>
+        {nudge}
+        {stale_warning}
         <p class="training-actions">
-            <button type="submit" form="learn-confirm-form" class="btn btn-primary">Confirm changes</button>
+            <button type="submit" form="learn-confirm-form" class="btn btn-primary" id="learn-confirm-btn">Confirm changes</button>
             <button type="submit" form="learn-confirm-form" formaction="/learn/cancel" class="btn btn-secondary">{CANCEL_LABEL}</button>
             <a href="/learn" class="btn btn-secondary">Upload another</a>
         </p>
@@ -643,12 +767,38 @@ def learn_preview_results_html(
         return ""
     parts: list[str] = []
     if batch_result is not None:
-        parts.append(training_verdict_banner_html(batch_result))
+        next_step = VERDICT_NEXT_STEPS.get(batch_result.verdict_band)
+        parts.append(
+            training_verdict_banner_html(
+                batch_result,
+                next_step=next_step,
+                stat_labels=VERDICT_STAT_LABELS,
+            )
+        )
+        parts.append(
+            _golden_baseline_hint_html(
+                batch_result.combined.tbc_new,
+                batch_result.combined.total,
+            )
+        )
     if compare_result is not None:
-        parts.append(compare_result_html(compare_result, stale=False, plain_language=True))
+        metrics = compare_result_html(compare_result, stale=False, plain_language=True)
+        parts.append(
+            _learn_collapsible_section_html(
+                METRICS_TABLE_SUMMARY,
+                metrics,
+                section_class="learn-metrics-collapse",
+            )
+        )
         if compare_result.changed_rows:
-            parts.append('<h3 class="section-header">Changed tickets</h3>')
-            parts.append(training_changed_rows_html(compare_result.changed_rows))
+            changed = training_changed_rows_html(compare_result.changed_rows)
+            parts.append(
+                _learn_collapsible_section_html(
+                    CHANGED_TICKETS_SUMMARY.format(n=len(compare_result.changed_rows)),
+                    changed,
+                    section_class="learn-changed-collapse",
+                )
+            )
     return "\n".join(parts)
 
 
@@ -674,38 +824,52 @@ def learn_preview_panel_html(
     results_block = ""
     if results:
         results_block = f"""
-    <div class="learn-preview-results">
+    <div class="learn-preview-results" id="learn-preview-results">
         <h3 class="section-header">{PREVIEW_RESULTS_HEADING}</h3>
         {results}
     </div>"""
+    no_op_rules_hint = ""
+    if (
+        batch_result is not None
+        and batch_result.verdict_band == "rules_needed"
+        and batch_result.selection_no_op_count is None
+    ):
+        no_op_rules_hint = f'<p class="meta preview-no-op-hint">{PREVIEW_NO_OP_RULES_NEEDED_HINT}</p>'
+    details_open = ' open' if batch_result is not None else ""
     return f"""
 <section class="learn-preview-section">
-    <h2 class="section-header">{PREVIEW_STEP_HEADING}</h2>
-    <p class="meta">{PREVIEW_HELP}</p>
-    <div class="upload-card-wrap">
-        <div class="upload-card training-preview-card">
-            <form action="/learn/preview" method="post" enctype="multipart/form-data"
-                  class="training-preview-form" id="learn-preview-form" data-loading-form>
-                <input type="hidden" name="upload_id" value="{_h(upload_id)}">
-                <div id="learn-preview-selection"></div>
-                <div class="training-preview-options">
-                    <input type="file" name="preview_file" class="file-input training-preview-file"
-                           accept=".json,.ndjson" required>
-                    <label class="filter-option">
-                        <input type="checkbox" name="bad_satisfaction_only" value="true"{bad_csat_checked}>
-                        Only preview tickets with bad CSAT rating
-                    </label>
-                    <label class="filter-option">
-                        <input type="checkbox" name="compute_no_op" value="true"{no_op_checked}>
-                        {PREVIEW_NO_OP_LABEL}
-                    </label>
-                    <button type="submit" class="btn btn-secondary" id="learn-preview-btn"
-                            data-loading-btn data-loading-label="{PREVIEW_LOADING}" disabled>{PREVIEW_BUTTON}</button>
-                </div>
-            </form>
-        </div>
-    </div>
     {results_block}
+    <details class="learn-preview-details" id="learn-preview-details"{details_open}>
+        <summary class="learn-preview-summary">{PREVIEW_DETAILS_SUMMARY}</summary>
+        <p class="meta">{PREVIEW_HELP}</p>
+        <div class="upload-card-wrap">
+            <div class="upload-card training-preview-card">
+                <form action="/learn/preview" method="post" enctype="multipart/form-data"
+                      class="training-preview-form" id="learn-preview-form" data-loading-form>
+                    <input type="hidden" name="upload_id" value="{_h(upload_id)}">
+                    <div id="learn-preview-selection"></div>
+                    {_learn_preview_file_guidance_html()}
+                    <div class="training-preview-options">
+                        <input type="file" name="preview_file" id="learn-preview-file"
+                               class="file-input training-preview-file"
+                               accept=".json,.ndjson" required>
+                        <label class="filter-option">
+                            <input type="checkbox" name="bad_satisfaction_only" value="true"{bad_csat_checked}>
+                            Only preview tickets with bad CSAT rating
+                        </label>
+                        <label class="filter-option">
+                            <input type="checkbox" name="compute_no_op" value="true"{no_op_checked}>
+                            {PREVIEW_NO_OP_LABEL}
+                        </label>
+                        <p class="meta preview-no-op-hint">{PREVIEW_NO_OP_HINT}</p>
+                        {no_op_rules_hint}
+                        <button type="submit" class="btn btn-secondary" id="learn-preview-btn"
+                                data-loading-btn data-loading-label="{PREVIEW_LOADING}" disabled>{PREVIEW_BUTTON}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </details>
 </section>""".strip()
 
 
@@ -752,16 +916,24 @@ def learn_process_body_html(
     confirm_bar = ""
     scripts = ""
     if result.rule_proposals or result.taxonomy_proposals:
-        confirm_bar = learn_confirm_bar_html()
+        verdict_band = batch_result.verdict_band if batch_result is not None else None
+        confirm_bar = learn_confirm_bar_html(
+            preview_run=batch_result is not None,
+            preview_stale=preview_stale,
+            verdict_band=verdict_band,
+        )
         scripts = _LEARN_SELECT_ALL_SCRIPT + "\n" + _LEARN_PREVIEW_SCRIPT
-    return f"{proposals}\n{preview}\n{confirm_bar}\n{scripts}"
+        tbc_footnote = f'<p class="meta tbc-footnote">{TBC_FOOTNOTE}</p>'
+    else:
+        tbc_footnote = ""
+    return f"{proposals}\n{tbc_footnote}\n{preview}\n{confirm_bar}\n{scripts}"
 
 
 def learn_revert_footer_html(*, show_revert: bool) -> str:
     if not show_revert:
         return ""
-    return """
-<p class="meta learn-revert-note">Undo restores the previous live config (taxonomy, workbook, rules).</p>
+    return f"""
+<p class="meta learn-revert-note">{LEARN_UNDO_NOTE}</p>
 <form action="/learn/revert" method="post" class="training-revert-form">
-    <button type="submit" class="btn btn-secondary">Undo last confirm</button>
+    <button type="submit" class="btn btn-secondary">{LEARN_UNDO_LAST_CONFIRM}</button>
 </form>""".strip()

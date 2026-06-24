@@ -21,6 +21,43 @@ def test_classifier_rules_load() -> None:
     }
 
 
+def test_portal_reason_bucket_coercion_to_other() -> None:
+    from cs_tickets.classify import ClassificationDecision, portal_reason_bucket
+
+    tier = ("B2C", "Service Task", "General Support", "TBC (Manual Review)", "N/A")
+    decision = ClassificationDecision(
+        tier=tier,
+        score=10.0,
+        fallback_used=False,
+        candidates=((tier, 10.0),),
+        evidence=(),
+    )
+    output_row = {"Tier4_Type": "TBC (Manual Review)"}
+    assert portal_reason_bucket(decision, output_row=output_row) == "other"
+
+
+def test_attach_tiers_with_meta_matches_attach_tiers(repo_root: Path) -> None:
+    from cs_tickets.classify import attach_tiers, attach_tiers_with_meta
+    from cs_tickets.taxonomy import load_allowlist
+
+    tax = repo_root / "doc" / "Taxonomy.csv"
+    xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
+    if not tax.is_file() or not xlsx.is_file():
+        pytest.skip("doc artifacts missing")
+    allow = load_allowlist(tax, xlsx)
+    row = {
+        "id": "1",
+        "tags": '["miscellaneous"]',
+        "subject": "Hello",
+        "description": "World",
+    }
+    out1, warn1 = attach_tiers(dict(row), allow)
+    out2, warn2, reason = attach_tiers_with_meta(dict(row), allow)
+    assert out1 == out2
+    assert warn1 == warn2
+    assert reason in {"not_tbc", "zero_candidate", "allowlist_filtered", "below_threshold", "lost_margin", "other"}
+
+
 def test_tbc_reason_buckets() -> None:
     from cs_tickets.classify import ClassificationDecision, RuleEvidence
 

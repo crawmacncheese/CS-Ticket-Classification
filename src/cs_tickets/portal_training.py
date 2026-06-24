@@ -31,7 +31,6 @@ from cs_tickets.portal_training_copy import (
     REVIEW_INTRO_ONE,
     REVIEW_STEP_HEADING,
     SAVE_SELECTED_LABEL,
-    SHOW_CHANGE_DETAILS_LABEL,
     STEP_LABELS,
     TRAINING_CANCEL_TITLE,
     TRAINING_REVERT_TITLE,
@@ -47,6 +46,8 @@ from cs_tickets.portal_training_copy import (
     UPLOAD_STEP_HEADING,
     VERDICT_MESSAGES,
 )
+from cs_tickets.portal_copy import LEARN_CHANGED_TICKETS_HEADING
+from cs_tickets.portal_ticket_preview import ticket_preview_html
 from cs_tickets.rule_coverage import computed_rule_targets, training_routing_badge, training_routing_badge_label
 from cs_tickets.taxonomy import AllowList
 
@@ -241,7 +242,12 @@ def training_preview_controls_html(session: _TrainingSession) -> str:
     """
 
 
-def training_verdict_banner_html(batch: BatchCompareResult) -> str:
+def training_verdict_banner_html(
+    batch: BatchCompareResult,
+    *,
+    next_step: str | None = None,
+    stat_labels: dict[str, str] | None = None,
+) -> str:
     combined = batch.combined
     label, action = VERDICT_MESSAGES.get(
         batch.verdict_band,
@@ -252,6 +258,10 @@ def training_verdict_banner_html(batch: BatchCompareResult) -> str:
     gap_fix = batch.outcome_counts.get("gap_fix", 0)
     regression = batch.outcome_counts.get("regression", 0)
     reroute = batch.outcome_counts.get("reroute", 0)
+    labels = stat_labels or {}
+    gap_label = labels.get("gap_fix", "Gap fixes")
+    regression_label = labels.get("regression", "Regressions")
+    reroute_label = labels.get("reroute", "Reroutes")
     no_op_line = ""
     if batch.selection_no_op_count is not None and batch.selected_tuples:
         n_sel = len(batch.selected_tuples)
@@ -259,13 +269,17 @@ def training_verdict_banner_html(batch: BatchCompareResult) -> str:
             f"<li>{batch.selection_no_op_count} of {n_sel} selected "
             f"categor{'y' if n_sel == 1 else 'ies'} had no effect on this export</li>"
         )
+    next_step_html = ""
+    if next_step:
+        next_step_html = f'<p class="verdict-next-step">{_esc(next_step)}</p>'
     return f"""
 <div class="verdict-banner verdict--{_esc(batch.verdict_band)}" role="status">
   <p class="verdict-headline">{_esc(label)}</p>
   <p class="verdict-action meta">{_esc(action)}</p>
+  {next_step_html}
   <ul class="verdict-stats">
     <li>Preview on {combined.total} tickets: manual review (TBC) {combined.tbc_old} &rarr; {combined.tbc_new} ({net_sign}{net_tbc})</li>
-    <li>Gap fixes: {gap_fix} · Regressions: {regression} · Reroutes: {reroute}</li>
+    <li>{_esc(gap_label)}: {gap_fix} · {_esc(regression_label)}: {regression} · {_esc(reroute_label)}: {reroute}</li>
     {no_op_line}
   </ul>
 </div>"""
@@ -291,45 +305,11 @@ def _golden_baseline_hint_html(tbc_count: int, total: int) -> str:
         return ""
 
 
-def training_changed_rows_html(changed_rows: list[dict], *, limit: int = 50) -> str:
+def training_changed_rows_html(changed_rows: list[dict], *, limit: int = 200) -> str:
+    """Deprecated wrapper — use ticket_preview_html(mode='changed')."""
     if not changed_rows:
         return '<p class="meta">No ticket classification changes on this export.</p>'
-    sample = changed_rows[:limit]
-    rows_html = ""
-    for ch in sample:
-        outcome = ch.get("outcome_type", "")
-        mechanism = ch.get("gap_fix_mechanism") or ""
-        reason = ch.get("new_tbc_reason") or ch.get("old_tbc_reason") or ""
-        rows_html += (
-            f"<tr>"
-            f"<td>{_esc(ch.get('id'))}</td>"
-            f"<td class='change-col-compact'>{_esc(ch.get('old_tier4'))}</td>"
-            f"<td class='change-col-compact'>{_esc(ch.get('new_tier4'))}</td>"
-            f"<td class='change-col-detail'>{_esc(outcome)}</td>"
-            f"<td class='change-col-detail'>{_esc(mechanism)}</td>"
-            f"<td class='change-col-detail'>{_esc(reason)}</td>"
-            f"</tr>"
-        )
-    more = ""
-    if len(changed_rows) > limit:
-        more = f'<p class="meta">Showing {limit} of {len(changed_rows)} changed tickets.</p>'
-    return f"""
-<label class="filter-option training-details-toggle">
-    <input type="checkbox" id="show-changed-details">
-    {SHOW_CHANGE_DETAILS_LABEL}
-</label>
-<table class="preview-table training-changed-table">
-    <thead><tr>
-        <th>Ticket id</th>
-        <th>Old category</th>
-        <th>New category</th>
-        <th class="change-col-detail">Outcome</th>
-        <th class="change-col-detail">Mechanism</th>
-        <th class="change-col-detail">Why (TBC reason)</th>
-    </tr></thead>
-    <tbody>{rows_html}</tbody>
-</table>
-{more}"""
+    return ticket_preview_html(changed_rows, mode="changed", limit=limit, table_id="training-changed-preview")
 
 
 def training_preview_section_html(
@@ -360,7 +340,7 @@ def training_preview_section_html(
         parts.append(compare_result_html(display, stale=False, plain_language=True))
         changed = display.changed_rows
         if changed:
-            parts.append("<h3 class=\"section-header\">Changed tickets</h3>")
+            parts.append(f'<h3 class="section-header">{LEARN_CHANGED_TICKETS_HEADING}</h3>')
             parts.append(training_changed_rows_html(changed))
     return "\n".join(parts)
 
@@ -400,6 +380,7 @@ def training_page_shell(
 <html lang="en">
 <head>{head}
 <script src="/static/training.js?v=2" defer></script>
+<script src="/static/ticket_preview.js?v=2" defer></script>
 </head>
 <body>
 <div class="container training-page">

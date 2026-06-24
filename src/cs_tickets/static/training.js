@@ -8,7 +8,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const previewForm = document.getElementById("training-preview-form");
   const previewSelected = document.getElementById("training-preview-selected-tuples");
   const mainForm = document.getElementById("training-main-form");
-  const showDetails = document.getElementById("show-changed-details");
 
   function selectedCheckboxes() {
     return [...document.querySelectorAll(".tuple-checkbox:checked")];
@@ -114,16 +113,35 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  if (showDetails) {
-    const table = document.querySelector(".training-changed-table");
-    const setExpanded = (expanded) => {
-      if (table) {
-        table.classList.toggle("training-changed-table--expanded", expanded);
+  const learnConfirmForm = document.getElementById("learn-confirm-form");
+  const learnConfirmBar = document.getElementById("learn-confirm-bar");
+  if (learnConfirmForm && learnConfirmBar) {
+    learnConfirmForm.addEventListener("submit", (event) => {
+      const submitter = event.submitter;
+      if (!submitter || submitter.id !== "learn-confirm-btn") {
+        return;
       }
-    };
-    setExpanded(showDetails.checked);
-    showDetails.addEventListener("change", () => {
-      setExpanded(showDetails.checked);
+      const verdict = learnConfirmBar.dataset.verdict;
+      if (verdict === "risky") {
+        const riskyMsg = learnConfirmBar.dataset.confirmRisky;
+        if (riskyMsg && !window.confirm(riskyMsg)) {
+          event.preventDefault();
+          return;
+        }
+      }
+      const nRules = document.querySelectorAll(
+        '#learn-confirm-form input.learn-row-chk[name="rule_ids"]:checked'
+      ).length;
+      const nTax = document.querySelectorAll(
+        '#learn-confirm-form input.learn-row-chk[name="tax_ids"]:checked'
+      ).length;
+      const leadTemplate = learnConfirmBar.dataset.confirmLead || "Confirm changes?";
+      const suffix = learnConfirmBar.dataset.confirmSuffix || "";
+      const lead = leadTemplate.replace("{n_rules}", String(nRules)).replace("{n_tax}", String(nTax));
+      const message = suffix ? `${lead}\n\n${suffix}` : lead;
+      if (!window.confirm(message)) {
+        event.preventDefault();
+      }
     });
   }
 

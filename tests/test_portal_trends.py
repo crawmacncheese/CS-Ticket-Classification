@@ -18,7 +18,7 @@ def test_dashboard_empty_when_no_db(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     monkeypatch.setenv("TBC_TRENDS_DB_PATH", str(db))
     r = client.get("/dashboard")
     assert r.status_code == 200
-    assert "TBC trends" in r.text
+    assert "Manual Review Trends" in r.text
     assert "No trend database" in r.text
     assert 'href="/learn"' in r.text
     assert "portal-topnav" in r.text
@@ -41,9 +41,9 @@ def test_dashboard_with_snapshot_db(repo_root: Path, tmp_path: Path, monkeypatch
     r = client.get("/dashboard")
     assert r.status_code == 200
     assert "5 tickets tracked" in r.text
-    assert "Weekly TBC rate" in r.text
-    assert "Top TBC tags" in r.text
-    assert "Subject clusters" in r.text
+    assert "Manual Review Over Time" in r.text
+    assert "Tags On Review Tickets" in r.text
+    assert "Common Subject Lines" in r.text
     assert "stats-table" in r.text
 
 
@@ -77,7 +77,7 @@ def test_index_links_to_dashboard() -> None:
     r = client.get("/")
     assert r.status_code == 200
     assert 'href="/dashboard"' in r.text
-    assert "TBC trends" in r.text
+    assert "Manual Review Trends" in r.text
     assert "training-entry-link" not in r.text
     assert "trends-entry-link" not in r.text
 

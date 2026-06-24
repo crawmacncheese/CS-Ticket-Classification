@@ -20,11 +20,11 @@ def test_health() -> None:
 def test_index_has_upload_form() -> None:
     r = client.get("/")
     assert r.status_code == 200
-    assert "Categorize support tickets" in r.text
+    assert "Categorize Support Tickets" in r.text
     assert 'action="/run"' in r.text
-    assert "bad CSAT rating" in r.text
+    assert "Bad CSAT Rating" in r.text
     assert "/static/classify.js" in r.text
-    assert "How categorization works (technical)" in r.text
+    assert "How Categorization Works (Technical)" in r.text
     assert "readme-doc" not in r.text
     assert "mermaid@10" not in r.text
 
@@ -66,14 +66,21 @@ def test_run_upload_ndjson(repo_root: Path) -> None:
     assert "manual review" in r.text
     assert "(TBC)" in r.text
     assert "portal-topnav" in r.text
-    assert "Download Excel workbook" in r.text
-    assert "New upload" in r.text
-    assert "Run history" in r.text
+    assert "Download Excel Workbook" in r.text
+    assert "Upload Another File" in r.text
+    assert "Run History" in r.text
     assert "drive.google.com/drive/folders/" in r.text
-    assert "Category breakdown" in r.text
+    assert "Results By Category" in r.text
     assert "/static/cs_tickets_theme.css" in r.text
     assert "stats-table" in r.text
     assert "Grand Total" in r.text
+    assert "ticket_preview.js" in r.text
+    assert "show-ticket-preview-details" in r.text
+    assert "show-ticket-preview-tbc-only" in r.text
+    assert "preview-col-detail" in r.text
+    assert "Why tickets need manual review" in r.text
+    assert 'id="classify-ticket-preview-data"' in r.text
+    assert "preview-col-detail' hidden" in r.text or 'preview-col-detail" hidden' in r.text
     assert "readme-doc" not in r.text
     run_id = next(iter(portal_app._RUNS))
     assert f'/download/{run_id}"' in r.text
@@ -158,7 +165,7 @@ def test_training_link_on_index_when_available(repo_root: Path, monkeypatch: pyt
     r = client.get("/")
     assert r.status_code == 200
     assert "/learn" in r.text
-    assert "Update reference categories" in r.text
+    assert "Add New Categories" in r.text
     assert "portal-topnav" in r.text
 
 

@@ -1,4 +1,6 @@
-# CS tickets
+# CS tickets (v2)
+
+> **Monorepo:** Training wizard, allowlist compare, TBC trends. **v1** (production Learn portal) is in [../v1/](../v1/). Layout: [../docs/MONOREPO.md](../docs/MONOREPO.md).
 
 Zendesk **NDJSON** export → **SCMP master-sheet** rows: flatten ticket fields, assign **Tier1–Tier5** using a weighted rule engine constrained by an **allow-list** (workbook + taxonomy CSV + small pipeline fallbacks). Ship as a **CLI** (`cs-tickets-pipeline`) and optional **local FastAPI portal** (upload, pivot-style stats, **`.xlsx`** download).
 

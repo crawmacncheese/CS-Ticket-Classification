@@ -45,7 +45,7 @@ def test_impact_column_marks_no_op_and_impactful_rows() -> None:
         preview_compute_no_op=True,
     )
     html = training_checklist_html(session, selected, allow=AllowList(tuples=frozenset()))
-    assert "Impact on export" in html
-    assert "Would change tickets" in html
-    assert "No impact" in html
+    assert "Impact On Export" in html
+    assert "Would Change Tickets" in html
+    assert "No Impact" in html
     assert "1 would change tickets, 1 have no impact" in html

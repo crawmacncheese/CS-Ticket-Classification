@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from cs_tickets.classify import attach_tiers
+from cs_tickets.classify import attach_tiers, attach_tiers_with_meta
 from cs_tickets.satisfaction import has_bad_satisfaction_rating
 from cs_tickets.schema import MASTER_COLUMNS
 from cs_tickets.taxonomy import AllowList
@@ -133,14 +133,13 @@ def _iter_ticket_dicts(export_path: Path) -> Iterator[dict[str, Any]]:
         )
 
 
-def iter_master_rows(
+def _iter_classified_tickets(
     ndjson_path: Path,
     allow: AllowList,
     *,
     limit: int | None = None,
     bad_satisfaction_only: bool = False,
-) -> Iterator[tuple[dict[str, Any], str | None]]:
-    """Stream ticket exports → full master-column dicts + optional per-row warning."""
+) -> Iterator[dict[str, Any]]:
     if thread_enrichment_enabled():
         tickets = list(_iter_ticket_dicts(ndjson_path))
         thread_index = build_ticket_index(tickets)
@@ -152,12 +151,46 @@ def iter_master_rows(
     for ticket in ticket_source:
         if bad_satisfaction_only and not has_bad_satisfaction_rating(ticket):
             continue
-        base = flatten_for_classify(ticket, thread_index)
-        row, warn = attach_tiers(base, allow)
-        yield row, warn
+        yield flatten_for_classify(ticket, thread_index)
         n += 1
         if limit is not None and n >= limit:
             break
+
+
+def iter_master_rows(
+    ndjson_path: Path,
+    allow: AllowList,
+    *,
+    limit: int | None = None,
+    bad_satisfaction_only: bool = False,
+) -> Iterator[tuple[dict[str, Any], str | None]]:
+    """Stream ticket exports → full master-column dicts + optional per-row warning."""
+    for base in _iter_classified_tickets(
+        ndjson_path,
+        allow,
+        limit=limit,
+        bad_satisfaction_only=bad_satisfaction_only,
+    ):
+        row, warn = attach_tiers(base, allow)
+        yield row, warn
+
+
+def iter_master_rows_with_meta(
+    ndjson_path: Path,
+    allow: AllowList,
+    *,
+    limit: int | None = None,
+    bad_satisfaction_only: bool = False,
+) -> Iterator[tuple[dict[str, Any], str | None, str]]:
+    """Portal-only: stream rows with TBC reason bucket metadata."""
+    for base in _iter_classified_tickets(
+        ndjson_path,
+        allow,
+        limit=limit,
+        bad_satisfaction_only=bad_satisfaction_only,
+    ):
+        row, warn, reason = attach_tiers_with_meta(base, allow)
+        yield row, warn, reason
 
 
 def format_cell(v: Any) -> str:

@@ -55,6 +55,7 @@ body.upload-page {
 .portal-topnav .btn {
   padding: 0.55rem 1rem;
   font-size: 0.9rem;
+  font-weight: 500;
   margin: 0;
   text-decoration: none;
   font-family: var(--font-sans);
@@ -367,6 +368,7 @@ body.upload-page {
 
 .section-header {
   font-family: var(--font-serif);
+  font-weight: 600;
   font-size: 1.75rem;
   margin-top: 2.5rem;
   margin-bottom: 1rem;
@@ -419,6 +421,48 @@ body.upload-page {
   margin-top: 2rem;
 }
 
+.learn-preview-details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem 1rem;
+  background: var(--surface, #fafafa);
+}
+
+.learn-preview-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1.05rem;
+  list-style: none;
+  padding: 0.25rem 0;
+}
+
+.learn-preview-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.learn-preview-details > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.learn-preview-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.learn-preview-details > .meta {
+  margin-top: 0.5rem;
+}
+
+.learn-preview-results {
+  margin-bottom: 1.25rem;
+}
+
+.learn-preview-skip,
+.learn-preview-nudge {
+  margin-top: 0.5rem;
+}
+
 .learn-preview-section .upload-card-wrap {
   justify-content: flex-start;
 }
@@ -431,6 +475,121 @@ body.upload-page {
 
 .learn-confirm-bar .training-actions {
   margin-top: 0.75rem;
+}
+
+.wizard-step--optional {
+  border: 1px dashed var(--border);
+  background: transparent;
+}
+
+.wizard-step-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.wizard-step-link:hover {
+  text-decoration: underline;
+}
+
+.learn-wizard {
+  margin-bottom: 1.25rem;
+}
+
+.session-details {
+  margin: 0.75rem 0 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+}
+
+.session-details > summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--muted-foreground, #64748b);
+  list-style: none;
+}
+
+.session-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.session-details > summary::before {
+  content: "▸ ";
+  display: inline-block;
+}
+
+.session-details[open] > summary::before {
+  content: "▾ ";
+}
+
+.session-details > .meta {
+  margin-top: 0.5rem;
+}
+
+.learn-table-collapse {
+  margin: 1.25rem 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1rem 1rem;
+}
+
+.learn-table-collapse > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 1.05rem;
+  list-style: none;
+  padding: 0.35rem 0;
+}
+
+.learn-table-collapse > summary::-webkit-details-marker {
+  display: none;
+}
+
+.learn-table-collapse > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.learn-table-collapse[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.learn-table-collapse .section-intro {
+  margin-top: 0.75rem;
+}
+
+.preview-file-label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.preview-file-steps {
+  margin: 0 0 1rem 1.25rem;
+  padding: 0;
+  font-size: 0.9rem;
+  color: var(--muted-foreground, #64748b);
+}
+
+.preview-file-steps li {
+  margin-bottom: 0.35rem;
+}
+
+.preview-no-op-hint {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.tbc-footnote {
+  margin: 1rem 0 0.5rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground, #64748b);
+}
+
+.verdict-next-step {
+  margin: 0.5rem 0 0.75rem;
+  font-weight: 500;
 }
 
 .stats-table tbody td {
@@ -785,6 +944,85 @@ body.upload-page {
 .training-details-toggle {
   display: block;
   margin: 1rem 0 0.5rem;
+}
+
+.ticket-preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  margin: 0.75rem 0;
+}
+
+table.ticket-preview-table:not(.ticket-preview-table--expanded) .preview-col-detail {
+  display: none;
+}
+
+table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
+  display: table-cell;
+}
+
+.ticket-preview-row {
+  cursor: pointer;
+}
+
+.ticket-preview-row--selected {
+  background: color-mix(in srgb, var(--primary, #2563eb) 12%, transparent);
+}
+
+.ticket-preview-detail {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 8px);
+  background: var(--card, #fff);
+}
+
+.ticket-preview-detail-dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(7rem, 10rem) 1fr;
+  gap: 0.35rem 1rem;
+}
+
+.ticket-preview-detail-dl dt {
+  font-weight: 600;
+  color: var(--muted-foreground, #64748b);
+}
+
+.ticket-preview-description {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tbc-reason-summary {
+  margin: 1rem 0 1.25rem;
+}
+
+.tbc-reason-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+}
+
+.tbc-reason-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.tbc-reason-count {
+  font-weight: 700;
+}
+
+.tbc-reason-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--muted-foreground, #64748b) 18%, transparent);
 }
 
 .training-page .section-header {

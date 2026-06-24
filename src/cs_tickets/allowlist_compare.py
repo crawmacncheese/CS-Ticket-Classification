@@ -66,6 +66,14 @@ class AllowlistCompareResult:
 
     below_threshold_new: int = 0
 
+    allowlist_filtered_old: int = 0
+
+    allowlist_filtered_new: int = 0
+
+    other_old: int = 0
+
+    other_new: int = 0
+
     rules_targeting_selected_old: int = 0
 
     rules_targeting_selected_new: int = 0
@@ -212,25 +220,25 @@ def _compare_row(
 
     below_threshold_new: int,
 
+    allowlist_filtered_old: int,
+
+    allowlist_filtered_new: int,
+
+    other_old: int,
+
+    other_new: int,
+
     changed_rows: list[dict],
 
     enrich_changed_rows: bool = False,
 
-) -> tuple[int, int, int, int, int, int, int, int, int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int, int]:
 
     old_dec = classify_row_with_explanation(row, allow_old, rule_specs=rule_specs_old)
 
     new_dec = classify_row_with_explanation(row, allow_new, rule_specs=rule_specs_new)
 
     total += 1
-
-    if not old_dec.candidates:
-
-        zero_candidate_old += 1
-
-    if not new_dec.candidates:
-
-        zero_candidate_new += 1
 
     if _is_tbc(old_dec):
 
@@ -246,13 +254,25 @@ def _compare_row(
 
             tbc_b2c_old += 1
 
-        if _count_tbc_bucket(old_dec, "lost_margin"):
+        if _count_tbc_bucket(old_dec, "zero_candidate"):
 
-            margin_loss_old += 1
+            zero_candidate_old += 1
+
+        if _count_tbc_bucket(old_dec, "allowlist_filtered"):
+
+            allowlist_filtered_old += 1
 
         if _count_tbc_bucket(old_dec, "below_threshold"):
 
             below_threshold_old += 1
+
+        if _count_tbc_bucket(old_dec, "lost_margin"):
+
+            margin_loss_old += 1
+
+        if _count_tbc_bucket(old_dec, "other"):
+
+            other_old += 1
 
     if _is_tbc(new_dec):
 
@@ -268,19 +288,37 @@ def _compare_row(
 
             tbc_b2c_new += 1
 
-        if _count_tbc_bucket(new_dec, "lost_margin"):
+        if _count_tbc_bucket(new_dec, "zero_candidate"):
 
-            margin_loss_new += 1
+            zero_candidate_new += 1
+
+        if _count_tbc_bucket(new_dec, "allowlist_filtered"):
+
+            allowlist_filtered_new += 1
 
         if _count_tbc_bucket(new_dec, "below_threshold"):
 
             below_threshold_new += 1
+
+        if _count_tbc_bucket(new_dec, "lost_margin"):
+
+            margin_loss_new += 1
+
+        if _count_tbc_bucket(new_dec, "other"):
+
+            other_new += 1
 
     if old_dec.tier != new_dec.tier:
 
         row_data: dict = {
 
             "id": str(row.get("id") or ""),
+
+            "subject": row.get("subject"),
+
+            "description": row.get("description"),
+
+            "tags": row.get("tags"),
 
             "old_tier4": old_dec.tier[3],
 
@@ -325,6 +363,14 @@ def _compare_row(
         below_threshold_old,
 
         below_threshold_new,
+
+        allowlist_filtered_old,
+
+        allowlist_filtered_new,
+
+        other_old,
+
+        other_new,
 
     )
 
@@ -414,6 +460,14 @@ def compare_allowlists_on_ndjson(
 
     below_threshold_new = 0
 
+    allowlist_filtered_old = 0
+
+    allowlist_filtered_new = 0
+
+    other_old = 0
+
+    other_new = 0
+
     changed_rows: list[dict] = []
 
     thread_index = (
@@ -462,6 +516,14 @@ def compare_allowlists_on_ndjson(
 
             below_threshold_new,
 
+            allowlist_filtered_old,
+
+            allowlist_filtered_new,
+
+            other_old,
+
+            other_new,
+
         ) = _compare_row(
 
             row,
@@ -499,6 +561,14 @@ def compare_allowlists_on_ndjson(
             below_threshold_old=below_threshold_old,
 
             below_threshold_new=below_threshold_new,
+
+            allowlist_filtered_old=allowlist_filtered_old,
+
+            allowlist_filtered_new=allowlist_filtered_new,
+
+            other_old=other_old,
+
+            other_new=other_new,
 
             changed_rows=changed_rows,
 
@@ -543,6 +613,14 @@ def compare_allowlists_on_ndjson(
         below_threshold_old=below_threshold_old,
 
         below_threshold_new=below_threshold_new,
+
+        allowlist_filtered_old=allowlist_filtered_old,
+
+        allowlist_filtered_new=allowlist_filtered_new,
+
+        other_old=other_old,
+
+        other_new=other_new,
 
         rules_targeting_selected_old=_rules_targeting_selected(selected_tuples, specs_old),
 
@@ -618,6 +696,14 @@ def compare_allowlists_on_workbook(
 
     below_threshold_new = 0
 
+    allowlist_filtered_old = 0
+
+    allowlist_filtered_new = 0
+
+    other_old = 0
+
+    other_new = 0
+
     changed_rows: list[dict] = []
 
 
@@ -656,6 +742,14 @@ def compare_allowlists_on_workbook(
 
             below_threshold_new,
 
+            allowlist_filtered_old,
+
+            allowlist_filtered_new,
+
+            other_old,
+
+            other_new,
+
         ) = _compare_row(
 
             row,
@@ -693,6 +787,14 @@ def compare_allowlists_on_workbook(
             below_threshold_old=below_threshold_old,
 
             below_threshold_new=below_threshold_new,
+
+            allowlist_filtered_old=allowlist_filtered_old,
+
+            allowlist_filtered_new=allowlist_filtered_new,
+
+            other_old=other_old,
+
+            other_new=other_new,
 
             changed_rows=changed_rows,
 
@@ -735,6 +837,14 @@ def compare_allowlists_on_workbook(
         below_threshold_old=below_threshold_old,
 
         below_threshold_new=below_threshold_new,
+
+        allowlist_filtered_old=allowlist_filtered_old,
+
+        allowlist_filtered_new=allowlist_filtered_new,
+
+        other_old=other_old,
+
+        other_new=other_new,
 
     )
 
@@ -819,22 +929,34 @@ def compare_result_html(
             ),
             ("Manual review %", pct(result.tbc_old), pct(result.tbc_new), ""),
             (
-                "Zero-candidate tickets",
+                "No rules matched (manual review)",
                 str(result.zero_candidate_old),
                 str(result.zero_candidate_new),
                 delta(result.zero_candidate_new, result.zero_candidate_old),
             ),
             (
-                "Margin-loss manual review",
+                "Rules blocked (manual review)",
+                str(result.allowlist_filtered_old),
+                str(result.allowlist_filtered_new),
+                delta(result.allowlist_filtered_new, result.allowlist_filtered_old),
+            ),
+            (
+                "Weak signal (manual review)",
+                str(result.below_threshold_old),
+                str(result.below_threshold_new),
+                delta(result.below_threshold_new, result.below_threshold_old),
+            ),
+            (
+                "Contested (manual review)",
                 str(result.margin_loss_old),
                 str(result.margin_loss_new),
                 delta(result.margin_loss_new, result.margin_loss_old),
             ),
             (
-                "Below-threshold manual review",
-                str(result.below_threshold_old),
-                str(result.below_threshold_new),
-                delta(result.below_threshold_new, result.below_threshold_old),
+                "Other manual review",
+                str(result.other_old),
+                str(result.other_new),
+                delta(result.other_new, result.other_old),
             ),
         ]
         col_old, col_new = "Current", "With your selection"
@@ -881,22 +1003,34 @@ def compare_result_html(
             ),
             ("TBC % (combined)", pct(result.tbc_old), pct(result.tbc_new), ""),
             (
-                "Zero-candidate rows",
+                "No rules matched (manual review)",
                 str(result.zero_candidate_old),
                 str(result.zero_candidate_new),
                 delta(result.zero_candidate_new, result.zero_candidate_old),
             ),
             (
-                "Margin-loss TBC",
+                "Rules blocked (manual review)",
+                str(result.allowlist_filtered_old),
+                str(result.allowlist_filtered_new),
+                delta(result.allowlist_filtered_new, result.allowlist_filtered_old),
+            ),
+            (
+                "Weak signal (manual review)",
+                str(result.below_threshold_old),
+                str(result.below_threshold_new),
+                delta(result.below_threshold_new, result.below_threshold_old),
+            ),
+            (
+                "Contested (manual review)",
                 str(result.margin_loss_old),
                 str(result.margin_loss_new),
                 delta(result.margin_loss_new, result.margin_loss_old),
             ),
             (
-                "Below-threshold TBC",
-                str(result.below_threshold_old),
-                str(result.below_threshold_new),
-                delta(result.below_threshold_new, result.below_threshold_old),
+                "Other manual review",
+                str(result.other_old),
+                str(result.other_new),
+                delta(result.other_new, result.other_old),
             ),
         ]
         col_old, col_new = "Old allow-list", "New allow-list"
