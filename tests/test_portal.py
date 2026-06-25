@@ -75,9 +75,7 @@ def test_run_upload_ndjson(repo_root: Path) -> None:
     assert "stats-table" in r.text
     assert "Grand Total" in r.text
     assert "ticket_preview.js" in r.text
-    assert "show-ticket-preview-details" in r.text
-    assert "show-ticket-preview-tbc-only" in r.text
-    assert "preview-col-detail" in r.text
+    assert "classify-ticket-preview-show-details" in r.text
     assert "Why tickets need manual review" in r.text
     assert 'id="classify-ticket-preview-data"' in r.text
     assert "preview-col-detail' hidden" in r.text or 'preview-col-detail" hidden' in r.text

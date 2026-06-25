@@ -224,7 +224,7 @@ def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
         title=REFERENCE_CATEGORIES_PAGE_TITLE,
         active="learn",
         body=page_body,
-        extra_scripts=["/static/training.js?v=5", "/static/ticket_preview.js?v=2"],
+        extra_scripts=["/static/training.js?v=5", "/static/ticket_preview.js?v=3"],
     )
 
 
@@ -406,7 +406,7 @@ async def run_upload(
             title="Categorization results",
             active="categorize",
             body=body,
-            extra_scripts=["/static/ticket_preview.js?v=2"],
+            extra_scripts=["/static/ticket_preview.js?v=3"],
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)

@@ -3,16 +3,42 @@ document.addEventListener("DOMContentLoaded", () => {
   roots.forEach((root) => initTicketPreview(root));
 });
 
+function escapeCssIdent(value) {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value);
+  }
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+function showPreviewError(root, message) {
+  const el = root.querySelector(".ticket-preview-error");
+  if (!el) return;
+  el.hidden = false;
+  el.textContent = message;
+}
+
 function initTicketPreview(root) {
   const tableId = root.dataset.tableId || "classify-ticket-preview";
-  const table = root.querySelector(`#${CSS.escape(tableId)}`) || root.querySelector(".ticket-preview-table");
-  const dataEl = root.querySelector(`#${CSS.escape(tableId)}-data`) || root.querySelector('script[type="application/json"]');
-  if (!table || !dataEl) return;
+  const table =
+    root.querySelector(`#${escapeCssIdent(tableId)}`) ||
+    root.querySelector(".ticket-preview-table");
+  const dataEl =
+    root.querySelector(`#${escapeCssIdent(tableId)}-data`) ||
+    root.querySelector('script[type="application/json"]');
+  if (!table || !dataEl) {
+    showPreviewError(root, "Ticket preview could not load (missing table or data).");
+    return;
+  }
 
   let payload;
   try {
     payload = JSON.parse(dataEl.textContent || "{}");
-  } catch {
+  } catch (err) {
+    showPreviewError(
+      root,
+      "Ticket preview could not load ticket data. Try refreshing the page."
+    );
+    console.error("ticket_preview: JSON parse failed", err);
     return;
   }
 
@@ -20,7 +46,9 @@ function initTicketPreview(root) {
   const showDetails = root.querySelector(".show-ticket-preview-details");
   const showTbcOnly = root.querySelector(".show-ticket-preview-tbc-only");
   const tbcMeta = root.querySelector(".ticket-preview-tbc-meta");
-  const detailPane = root.querySelector("#ticket-preview-detail");
+  const detailPane =
+    root.querySelector(`#${escapeCssIdent(tableId)}-detail`) ||
+    root.querySelector(".ticket-preview-detail");
   const detailPlaceholder = detailPane?.querySelector(".ticket-preview-detail-placeholder");
   const detailContent = detailPane?.querySelector(".ticket-preview-detail-content");
   const limit = payload.limit || 200;

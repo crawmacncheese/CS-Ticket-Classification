@@ -63,3 +63,11 @@ Full suite: `pytest -q` — all passed at implementation time.
 
 - Portal run still classifies export twice (`iter_master_rows_with_meta` + `try_append_portal_snapshot`); captured reasons could be reused for trends later.
 - `training_changed_rows_html` kept as thin wrapper for backward compatibility; callers can migrate to `ticket_preview_html` directly.
+
+## Prod fix (2026-06-24)
+
+**Symptom:** Show TBC only, Show ticket details, and row click all dead in prod but UI visible.
+
+**Root cause:** Ticket JSON embedded in `<script type="application/json">` without escaping `</`. Real Zendesk descriptions/tags can contain `</script>`, which closes the HTML script tag early; `JSON.parse` then fails and `ticket_preview.js` exited silently.
+
+**Fix:** `_embed_json_for_script()` escapes `</` → `<\/`; scoped checkbox/detail IDs per table; visible error if init fails; `ticket_preview.js?v=3`, `cs_tickets_theme.css?v=5`.

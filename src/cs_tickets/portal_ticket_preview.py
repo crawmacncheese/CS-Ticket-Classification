@@ -23,6 +23,11 @@ _TIER_COLS = (
 )
 
 
+def _embed_json_for_script(data: object) -> str:
+    """JSON safe inside <script type=\"application/json\"> — escape </ so HTML cannot close the tag."""
+    return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+
+
 def _esc(v: object) -> str:
     if v is None:
         return ""
@@ -245,7 +250,7 @@ def ticket_preview_html(
     if len(tickets) > limit:
         more = f'<p class="meta">Export has {len(tickets)} rows; preview shows first {limit}.</p>'
 
-    json_blob = json.dumps(
+    json_blob = _embed_json_for_script(
         {
             "mode": mode,
             "limit": limit,
@@ -253,31 +258,34 @@ def ticket_preview_html(
             "labels": TBC_REASON_LABELS,
             "explanations": TBC_REASON_EXPLANATIONS,
             "select_hint": TICKET_PREVIEW_SELECT_HINT,
-        },
-        ensure_ascii=False,
+        }
     )
+    details_id = f"{table_id}-show-details"
+    tbc_only_id = f"{table_id}-show-tbc-only"
+    detail_pane_id = f"{table_id}-detail"
 
     return f"""
 <div class="ticket-preview-root" data-mode="{_esc(mode)}" data-table-id="{_esc(table_id)}">
   <div class="ticket-preview-controls">
-    <label class="filter-option ticket-preview-toggle">
-      <input type="checkbox" id="show-ticket-preview-tbc-only" class="show-ticket-preview-tbc-only">
-      {SHOW_TICKET_PREVIEW_TBC_ONLY_LABEL}
-    </label>
-    <label class="filter-option ticket-preview-toggle">
-      <input type="checkbox" id="show-ticket-preview-details" class="show-ticket-preview-details">
+    <label class="filter-option ticket-preview-toggle" for="{_esc(details_id)}">
+      <input type="checkbox" id="{_esc(details_id)}" class="show-ticket-preview-details">
       {SHOW_TICKET_PREVIEW_DETAILS_LABEL}
+    </label>
+    <label class="filter-option ticket-preview-toggle" for="{_esc(tbc_only_id)}">
+      <input type="checkbox" id="{_esc(tbc_only_id)}" class="show-ticket-preview-tbc-only">
+      {SHOW_TICKET_PREVIEW_TBC_ONLY_LABEL}
     </label>
   </div>
   <p class="meta ticket-preview-cap-meta">{_esc(cap_meta)}</p>
   <p class="meta ticket-preview-tbc-meta" hidden data-tbc-in-slice="{tbc_in_slice}"></p>
+  <p class="meta ticket-preview-error" hidden></p>
   <div class="preview-wrap">
     <table class="preview-table ticket-preview-table" id="{_esc(table_id)}">
       {thead}
       <tbody>{rows_html}</tbody>
     </table>
   </div>
-  <div id="ticket-preview-detail" class="ticket-preview-detail" aria-live="polite">
+  <div id="{_esc(detail_pane_id)}" class="ticket-preview-detail" aria-live="polite">
     <p class="ticket-preview-detail-placeholder meta">{TICKET_PREVIEW_SELECT_HINT}</p>
     <div class="ticket-preview-detail-content" hidden></div>
   </div>

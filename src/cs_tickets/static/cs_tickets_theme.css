@@ -969,6 +969,10 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
   background: color-mix(in srgb, var(--primary, #2563eb) 12%, transparent);
 }
 
+.ticket-preview-error {
+  color: var(--destructive, #b91c1c);
+}
+
 .ticket-preview-detail {
   margin-top: 1rem;
   padding: 1rem 1.25rem;

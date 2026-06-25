@@ -380,7 +380,7 @@ def training_page_shell(
 <html lang="en">
 <head>{head}
 <script src="/static/training.js?v=2" defer></script>
-<script src="/static/ticket_preview.js?v=2" defer></script>
+<script src="/static/ticket_preview.js?v=3" defer></script>
 </head>
 <body>
 <div class="container training-page">
