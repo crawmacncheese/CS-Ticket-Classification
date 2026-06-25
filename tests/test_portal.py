@@ -158,6 +158,13 @@ def test_static_theme_css() -> None:
     assert r.headers.get("content-type", "").startswith("text/css")
 
 
+def test_static_ticket_preview_js() -> None:
+    r = client.get("/static/ticket_preview.js")
+    assert r.status_code == 200
+    assert "ticket_preview" in r.text
+    assert r.headers.get("content-type", "").startswith("text/javascript")
+
+
 def test_training_link_on_index_when_available(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cs_tickets.portal_app._repo_root", lambda: repo_root)
     r = client.get("/")

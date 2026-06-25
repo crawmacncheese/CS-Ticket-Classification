@@ -30,7 +30,7 @@ cs-tickets-pipeline = "cs_tickets.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-cs_tickets = ["static/*.css", "classifier_rules.json"]
+cs_tickets = ["static/*.css", "static/*.js", "classifier_rules.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
