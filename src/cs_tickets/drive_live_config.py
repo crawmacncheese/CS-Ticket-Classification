@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ from cs_tickets.live_config import (
     RULES_FILE,
     TAXONOMY_FILE,
     WORKBOOK_FILE,
+    read_config_version,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,6 +111,41 @@ def drive_live_sync_readiness() -> tuple[bool, str]:
 def drive_live_config_enabled() -> bool:
     ready, _ = drive_live_sync_readiness()
     return ready
+
+
+def read_remote_config_version(folder_id: str | None = None) -> int | None:
+    """Read config_version.json from Drive without downloading other live files."""
+    fid = folder_id or live_folder_id()
+    if not fid:
+        return None
+    try:
+        service = build_drive_service()
+        remote = find_child_file(service, fid, CONFIG_VERSION_FILE)
+        if not remote or not remote.get("id"):
+            return None
+        payload = download_file_bytes(service, str(remote["id"]))
+        data = json.loads(payload.decode("utf-8"))
+        return int(data.get("version", 0))
+    except Exception as exc:
+        logger.warning("Could not read Drive config version: %s", exc)
+        return None
+
+
+def sync_live_from_drive_if_newer(live_dir: Path) -> str | None:
+    """Download live config from Drive only when remote config_version is newer than local."""
+    folder_id = live_folder_id()
+    if not folder_id:
+        return None
+    local_version = read_config_version(live_dir)
+    remote_version = read_remote_config_version(folder_id)
+    if remote_version is not None and remote_version <= local_version:
+        logger.info(
+            "Skipping Drive live config download: remote v%s <= local v%s",
+            remote_version,
+            local_version,
+        )
+        return None
+    return sync_live_from_drive(live_dir)
 
 
 def sync_live_from_drive(live_dir: Path) -> str | None:

@@ -134,7 +134,7 @@ def test_bootstrap_prefers_references_over_doc(tmp_path: Path, repo_root: Path) 
     assert "RefOnly" in text
 
 
-@patch("cs_tickets.runtime_config.sync_live_from_drive")
+@patch("cs_tickets.runtime_config.sync_live_from_drive_if_newer")
 def test_refresh_live_from_drive_when_enabled(
     mock_sync: MagicMock,
     tmp_path: Path,

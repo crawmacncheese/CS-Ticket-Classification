@@ -7,7 +7,10 @@ from importlib.resources import files
 from pathlib import Path
 
 from cs_tickets.classifier_rules import RuleSpec, _load_rules_file, load_rule_specs
-from cs_tickets.drive_live_config import drive_live_config_enabled, sync_live_from_drive
+from cs_tickets.drive_live_config import (
+    drive_live_config_enabled,
+    sync_live_from_drive_if_newer,
+)
 from cs_tickets.live_config import (
     CONFIG_VERSION_FILE,
     RULES_FILE,
@@ -113,7 +116,7 @@ def ensure_live_bootstrapped(repo_root: Path) -> Path:
         write_config_version(target, version=1, proposal_id="bootstrap", upload_id="bootstrap")
 
     if drive_live_config_enabled():
-        sync_live_from_drive(target)
+        sync_live_from_drive_if_newer(target)
 
     return target
 
@@ -124,7 +127,7 @@ def refresh_live_from_drive(repo_root: Path) -> None:
         return
     target = live_dir(repo_root)
     target.mkdir(parents=True, exist_ok=True)
-    sync_live_from_drive(target)
+    sync_live_from_drive_if_newer(target)
     invalidate_runtime_cache()
 
 

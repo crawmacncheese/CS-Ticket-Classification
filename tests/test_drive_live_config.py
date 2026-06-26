@@ -7,7 +7,9 @@ import pytest
 from cs_tickets.drive_live_config import (
     drive_live_config_enabled,
     live_folder_id,
+    read_remote_config_version,
     sync_live_from_drive,
+    sync_live_from_drive_if_newer,
     sync_live_to_drive,
 )
 from cs_tickets.live_config import CONFIG_VERSION_FILE, RULES_FILE, TAXONOMY_FILE, WORKBOOK_FILE
@@ -84,6 +86,71 @@ def test_sync_live_from_drive_writes_local_cache(
     err = sync_live_from_drive(live)
     assert err is None
     assert (live / CONFIG_VERSION_FILE).read_bytes() == b'{"version": 9}\n'
+
+
+@patch("cs_tickets.drive_live_config.sync_live_from_drive")
+@patch("cs_tickets.drive_live_config.read_remote_config_version")
+def test_sync_live_from_drive_if_newer_skips_stale_remote(
+    mock_remote_version: MagicMock,
+    mock_sync: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / CONFIG_VERSION_FILE).write_text('{"version": 5}\n', encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_DRIVE_LIVE_FOLDER_ID", "live-folder")
+    monkeypatch.setenv("DRIVE_UPLOAD_ENABLED", "true")
+    monkeypatch.setenv("RUNTIME_CONFIG_DRIVE_ENABLED", "true")
+    creds = tmp_path / "sa.json"
+    creds.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds))
+
+    mock_remote_version.return_value = 4
+    err = sync_live_from_drive_if_newer(live)
+    assert err is None
+    mock_sync.assert_not_called()
+
+
+@patch("cs_tickets.drive_live_config.sync_live_from_drive")
+@patch("cs_tickets.drive_live_config.read_remote_config_version")
+def test_sync_live_from_drive_if_newer_downloads_when_remote_is_newer(
+    mock_remote_version: MagicMock,
+    mock_sync: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / CONFIG_VERSION_FILE).write_text('{"version": 2}\n', encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_DRIVE_LIVE_FOLDER_ID", "live-folder")
+    monkeypatch.setenv("DRIVE_UPLOAD_ENABLED", "true")
+    monkeypatch.setenv("RUNTIME_CONFIG_DRIVE_ENABLED", "true")
+    creds = tmp_path / "sa.json"
+    creds.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds))
+
+    mock_remote_version.return_value = 6
+    mock_sync.return_value = None
+    err = sync_live_from_drive_if_newer(live)
+    assert err is None
+    mock_sync.assert_called_once_with(live)
+
+
+@patch("cs_tickets.drive_live_config.download_file_bytes")
+@patch("cs_tickets.drive_live_config.find_child_file")
+@patch("cs_tickets.drive_live_config.build_drive_service")
+def test_read_remote_config_version(
+    mock_build: MagicMock,
+    mock_find: MagicMock,
+    mock_download: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GOOGLE_DRIVE_LIVE_FOLDER_ID", "live-folder")
+    mock_find.return_value = {"id": "ver1"}
+    mock_download.return_value = b'{"version": 12}\n'
+    mock_build.return_value = MagicMock()
+    assert read_remote_config_version() == 12
 
 
 def test_drive_live_config_enabled_requires_runtime_flag(

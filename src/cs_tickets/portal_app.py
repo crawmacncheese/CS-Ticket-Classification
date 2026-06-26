@@ -696,12 +696,12 @@ async def learn_confirm(
     except PromoteError as exc:
         return _learn_error_html(str(exc))
 
-    _sync_runtime_classifier(repo_root)
     drive_sync, drive_error, drive_skip = try_sync_live_to_drive(
         live,
         proposals_dir=confirm_result.proposals_dir,
         backup_version=confirm_result.config_version_before,
     )
+    _sync_runtime_classifier(repo_root)
     record.status = "live"
     record.confirm_result = confirm_result
     record.drive_error = drive_error
@@ -751,6 +751,7 @@ async def learn_revert() -> str:
         restored_version = revert_latest_live_backup(live)
     except PromoteError as exc:
         return _learn_error_html(str(exc))
+    try_sync_live_to_drive(live, backup_version=restored_version)
     _sync_runtime_classifier(repo_root)
     revert_footer = learn_revert_footer_html(show_revert=has_revertable_live_backup(live))
     body = f"""
