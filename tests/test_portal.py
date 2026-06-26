@@ -165,6 +165,18 @@ def test_static_ticket_preview_js() -> None:
     assert r.headers.get("content-type", "").startswith("text/javascript")
 
 
+def test_resolve_static_dir_falls_back_when_package_bundle_incomplete(tmp_path: Path) -> None:
+    incomplete = tmp_path / "pkg" / "static"
+    complete = tmp_path / "src" / "cs_tickets" / "static"
+    incomplete.mkdir(parents=True)
+    complete.mkdir(parents=True)
+    (incomplete / "cs_tickets_theme.css").write_text("css", encoding="utf-8")
+    (complete / "ticket_preview.js").write_text("ticket_preview", encoding="utf-8")
+
+    resolved = portal_app._resolve_static_dir(tmp_path / "pkg" / "portal_app.py")
+    assert resolved == complete
+
+
 def test_training_link_on_index_when_available(repo_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cs_tickets.portal_app._repo_root", lambda: repo_root)
     r = client.get("/")

@@ -94,7 +94,30 @@ from cs_tickets.schema import MASTER_COLUMNS
 
 logger = logging.getLogger(__name__)
 
-_STATIC_DIR = Path(__file__).resolve().parent / "static"
+_STATIC_PROBE = "ticket_preview.js"
+
+
+def _resolve_static_dir(module_file: str | Path) -> Path:
+    """Locate portal static assets; fall back to repo src/ when package-data is incomplete."""
+    pkg_static = Path(module_file).resolve().parent / "static"
+    if (pkg_static / _STATIC_PROBE).is_file():
+        return pkg_static
+    candidates = [Path("/app/src/cs_tickets/static")]
+    here = Path(module_file).resolve().parent
+    for parent in here.parents:
+        candidates.append(parent / "src" / "cs_tickets" / "static")
+    for candidate in candidates:
+        if (candidate / _STATIC_PROBE).is_file():
+            logger.warning(
+                "Installed package static dir missing %s; serving from %s",
+                _STATIC_PROBE,
+                candidate,
+            )
+            return candidate
+    return pkg_static
+
+
+_STATIC_DIR = _resolve_static_dir(__file__)
 _JSON_EXTENSIONS = frozenset({".json", ".ndjson"})
 _XLSX_EXTENSIONS = frozenset({".xlsx"})
 

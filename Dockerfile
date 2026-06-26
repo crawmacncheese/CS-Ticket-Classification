@@ -25,6 +25,14 @@ COPY README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-editable --extra portal
 
+# Ensure JS assets are present in the installed package (belt-and-suspenders for setuptools package-data)
+RUN .venv/bin/python -c "\
+import pathlib, shutil, cs_tickets; \
+dst = pathlib.Path(cs_tickets.__file__).resolve().parent / 'static'; \
+dst.mkdir(exist_ok=True); \
+src = pathlib.Path('src/cs_tickets/static'); \
+[shutil.copy2(f, dst / f.name) for f in src.iterdir() if f.is_file()]"
+
 # Non-root user; entire /app must be writable for runs/live/ and runs/proposals/
 RUN addgroup --system appgroup && \
     adduser --system --no-create-home --ingroup appgroup appuser && \
