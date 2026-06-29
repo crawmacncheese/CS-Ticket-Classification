@@ -51,6 +51,31 @@ def test_credentials_file_path_uses_k8s_mount(
     assert credentials_file_path() == str(mount)
 
 
+def test_credentials_file_path_resolves_relative_env_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    key = tmp_path / "secrets" / "google" / "credentials.json"
+    key.parent.mkdir(parents=True)
+    key.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("CS_TICKETS_REPO_ROOT", str(tmp_path))
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "secrets/google/credentials.json")
+    assert credentials_file_path() == str(key.resolve())
+
+
+def test_credentials_file_path_falls_back_to_repo_secrets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    key = tmp_path / "secrets" / "google" / "credentials.json"
+    key.parent.mkdir(parents=True)
+    key.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("CS_TICKETS_REPO_ROOT", str(tmp_path))
+    monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
+    import cs_tickets.drive_upload as du
+
+    monkeypatch.setattr(du, "K8S_CREDENTIALS_PATHS", ())
+    assert credentials_file_path() == str(key.resolve())
+
+
 def test_service_account_email_from_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

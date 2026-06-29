@@ -153,6 +153,42 @@ def test_read_remote_config_version(
     assert read_remote_config_version() == 12
 
 
+@patch("cs_tickets.drive_live_config.upload_or_update_bytes")
+@patch("cs_tickets.drive_live_config.ensure_child_folder")
+@patch("cs_tickets.drive_live_config.build_drive_service")
+def test_sync_live_to_drive_warns_when_remote_version_stale(
+    mock_build: MagicMock,
+    mock_ensure_folder: MagicMock,
+    mock_upload: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / TAXONOMY_FILE).write_text("Tier1_Segment,Tier2_Stream,Tier3_Cat,Tier4_Type\n", encoding="utf-8")
+    (live / RULES_FILE).write_text("[]\n", encoding="utf-8")
+    (live / CONFIG_VERSION_FILE).write_text('{"version": 5}\n', encoding="utf-8")
+    (live / WORKBOOK_FILE).write_bytes(b"PK\x03\x04workbook")
+
+    monkeypatch.setenv("GOOGLE_DRIVE_LIVE_FOLDER_ID", "live-folder")
+    monkeypatch.setenv("DRIVE_UPLOAD_ENABLED", "true")
+    monkeypatch.setenv("GOOGLE_DRIVE_RUNS_FOLDER_ID", "runs-root")
+
+    api = MagicMock()
+    api.files().get().execute.return_value = {"webViewLink": "https://drive.google.com/drive/folders/live-folder"}
+    mock_build.return_value = api
+    mock_ensure_folder.return_value = "subfolder"
+
+    with patch("cs_tickets.drive_live_config.read_remote_config_version", return_value=4):
+        result, err = sync_live_to_drive(live)
+
+    assert result is not None
+    assert result.files_uploaded == 4
+    assert err is not None
+    assert "mismatch" in err
+    assert mock_upload.call_count == 4
+
+
 def test_drive_live_config_enabled_requires_runtime_flag(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,

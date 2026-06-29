@@ -39,8 +39,8 @@ BACKUP_FOLDER_NAME = "backup"
 _LIVE_FILES: tuple[tuple[str, str], ...] = (
     (TAXONOMY_FILE, CSV_MIME),
     (RULES_FILE, JSON_MIME),
-    (CONFIG_VERSION_FILE, JSON_MIME),
     (WORKBOOK_FILE, XLSX_MIME),
+    (CONFIG_VERSION_FILE, JSON_MIME),
 )
 
 
@@ -269,10 +269,21 @@ def sync_live_to_drive(
             files_uploaded=uploaded,
             proposal_files_uploaded=proposal_uploads,
         )
+        local_version = read_config_version(live_dir)
+        remote_version = read_remote_config_version(folder_id)
+        if remote_version is not None and remote_version != local_version:
+            msg = (
+                f"Drive config version mismatch after upload: "
+                f"local v{local_version}, Drive v{remote_version}. "
+                "Categorize runs may not see the latest rules until this is fixed."
+            )
+            logger.warning(msg)
+            return result, msg
         logger.info(
-            "Uploaded live config to Drive (%s files, %s audit files)",
+            "Uploaded live config to Drive (%s files, %s audit files, config v%s)",
             uploaded,
             proposal_uploads,
+            local_version,
         )
         return result, None
     except DriveUploadError as exc:

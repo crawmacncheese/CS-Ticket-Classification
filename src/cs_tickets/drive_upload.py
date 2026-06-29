@@ -68,14 +68,42 @@ def drive_upload_configured() -> bool:
     return drive_upload_enabled()
 
 
+def _repo_root_for_credentials() -> Path:
+    raw = (os.environ.get("CS_TICKETS_REPO_ROOT") or "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    from cs_tickets.repo_paths import resolve_repo_root
+
+    return resolve_repo_root()
+
+
+def _resolve_existing_file(raw: str) -> str | None:
+    p = Path(raw).expanduser()
+    if not p.is_absolute():
+        p = _repo_root_for_credentials() / p
+    resolved = p.resolve()
+    return str(resolved) if resolved.is_file() else None
+
+
 def credentials_file_path() -> str | None:
-    """Path to service-account JSON, if configured or present on the K8s mount."""
+    """Path to service-account JSON, if configured or present on a known mount."""
     explicit = (os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") or "").strip()
     if explicit:
-        return explicit
+        found = _resolve_existing_file(explicit)
+        if found:
+            return found
+        p = Path(explicit).expanduser()
+        if not p.is_absolute():
+            p = _repo_root_for_credentials() / p
+        return str(p.resolve())
     for path in K8S_CREDENTIALS_PATHS:
         if os.path.isfile(path):
             return path
+    root = _repo_root_for_credentials()
+    for rel in ("secrets/google/credentials.json", "secrets/credentials.json"):
+        found = _resolve_existing_file(str(root / rel))
+        if found:
+            return found
     return None
 
 

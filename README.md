@@ -143,9 +143,27 @@ python -m cs_tickets --input data/export-....json -o out/master.csv
 
 ## Local test portal
 
+**Local files only (default):**
+
 ```bash
 uvicorn cs_tickets.portal_app:app --reload --port 8777
 ```
+
+**Same Drive config as production** (allow-list/rules from prod `runs/live/` on Drive):
+
+```powershell
+# Windows — copies .env.example → .env on first run
+.\scripts\start-portal-drive.ps1
+```
+
+```bash
+# macOS/Linux
+cp .env.example .env
+# place SA key at secrets/google/credentials.json
+uvicorn cs_tickets.portal_app:app --reload --port 8777 --env-file .env
+```
+
+Folder IDs match `cs-ticket-automation-dev-prod-new/v2/k8s/prod/deploy/deployment.yaml` (same as this repo's `k8s/prod/deploy/deployment.yaml`). On startup the portal pulls `runs/live/` from Drive when credentials are present (see `.env.example`).
 
 Open http://127.0.0.1:8777 — upload NDJSON; the result page shows a **pivot-style tier breakdown** and ticket preview. Optional checkbox **Only categorize tickets with bad CSAT rating** limits the run to tickets whose Zendesk export has `satisfaction_rating.score == "bad"`. **Download** is an **`.xlsx`** with sheets **Run metadata**, **Tickets**, and **Tier breakdown** (when the filter is used, Run metadata records `filter = bad_satisfaction_only`). Static theme CSS is served from `/static/`.
 
