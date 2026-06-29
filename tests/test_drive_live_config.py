@@ -90,6 +90,31 @@ def test_sync_live_from_drive_writes_local_cache(
 
 @patch("cs_tickets.drive_live_config.sync_live_from_drive")
 @patch("cs_tickets.drive_live_config.read_remote_config_version")
+def test_sync_live_from_drive_if_newer_refreshes_when_versions_equal(
+    mock_remote_version: MagicMock,
+    mock_sync: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    live = tmp_path / "live"
+    live.mkdir()
+    (live / CONFIG_VERSION_FILE).write_text('{"version": 5}\n', encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_DRIVE_LIVE_FOLDER_ID", "live-folder")
+    monkeypatch.setenv("DRIVE_UPLOAD_ENABLED", "true")
+    monkeypatch.setenv("RUNTIME_CONFIG_DRIVE_ENABLED", "true")
+    creds = tmp_path / "sa.json"
+    creds.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(creds))
+
+    mock_remote_version.return_value = 5
+    mock_sync.return_value = None
+    err = sync_live_from_drive_if_newer(live)
+    assert err is None
+    mock_sync.assert_called_once_with(live)
+
+
+@patch("cs_tickets.drive_live_config.sync_live_from_drive")
+@patch("cs_tickets.drive_live_config.read_remote_config_version")
 def test_sync_live_from_drive_if_newer_skips_stale_remote(
     mock_remote_version: MagicMock,
     mock_sync: MagicMock,

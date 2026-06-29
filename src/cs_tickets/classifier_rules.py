@@ -85,6 +85,7 @@ def set_active_rule_specs(rules: tuple[RuleSpec, ...] | None) -> None:
     """Portal/runtime override; None restores package + training_rules defaults."""
     global _override_rule_specs
     _override_rule_specs = rules
+    load_rule_specs.cache_clear()
 
 
 @lru_cache(maxsize=1)

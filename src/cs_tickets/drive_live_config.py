@@ -132,19 +132,24 @@ def read_remote_config_version(folder_id: str | None = None) -> int | None:
 
 
 def sync_live_from_drive_if_newer(live_dir: Path) -> str | None:
-    """Download live config from Drive only when remote config_version is newer than local."""
+    """Download live config from Drive when remote version is not behind local."""
     folder_id = live_folder_id()
     if not folder_id:
         return None
     local_version = read_config_version(live_dir)
     remote_version = read_remote_config_version(folder_id)
-    if remote_version is not None and remote_version <= local_version:
+    if remote_version is not None and remote_version < local_version:
         logger.info(
-            "Skipping Drive live config download: remote v%s <= local v%s",
+            "Skipping Drive live config download: remote v%s < local v%s",
             remote_version,
             local_version,
         )
         return None
+    if remote_version is not None and remote_version == local_version:
+        logger.info(
+            "Refreshing live config from Drive at shared version v%s",
+            local_version,
+        )
     return sync_live_from_drive(live_dir)
 
 

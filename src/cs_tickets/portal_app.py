@@ -258,8 +258,8 @@ def _repo_root() -> Path:
 def _sync_runtime_classifier(repo_root: Path | None = None) -> None:
     root = repo_root or _repo_root()
     ensure_live_bootstrapped(root)
-    set_active_rule_specs(load_runtime_rule_specs(root))
     invalidate_runtime_cache()
+    set_active_rule_specs(load_runtime_rule_specs(root))
 
 
 def _default_allowlist():

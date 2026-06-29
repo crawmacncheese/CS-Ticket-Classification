@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cs_tickets.classifier_rules import load_rule_specs, reload_rule_specs
+from cs_tickets.classifier_rules import RuleSpec, load_rule_specs, reload_rule_specs, set_active_rule_specs
 
 
 def test_load_rule_specs_includes_core_rules() -> None:
@@ -33,3 +33,22 @@ def test_reload_picks_up_training_rules(repo_root: Path, tmp_path: Path, monkeyp
     rules = load_rule_specs()
     assert any(r.id == "training.test.rule" for r in rules)
     assert any(r.tuple_key == "abc123" for r in rules)
+
+
+def test_set_active_rule_specs_invalidates_cached_load_rule_specs() -> None:
+    set_active_rule_specs(())
+    first = load_rule_specs()
+    updated = (
+        RuleSpec(
+            id="runtime.cache.probe",
+            tier=("B2C", "Service Task", "General Support", "TBC (Manual Review)", "N/A"),
+            weight=10.0,
+            any_tags=("cache_probe",),
+        ),
+    )
+    set_active_rule_specs(updated)
+    second = load_rule_specs()
+    assert first != second
+    assert any(r.id == "runtime.cache.probe" for r in second)
+    set_active_rule_specs(None)
+    load_rule_specs.cache_clear()

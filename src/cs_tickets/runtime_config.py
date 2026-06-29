@@ -163,6 +163,9 @@ def load_runtime_allowlist(repo_root: Path) -> AllowList:
 
 def invalidate_runtime_cache() -> None:
     _load_rule_specs_cached.cache_clear()
+    from cs_tickets.classifier_rules import load_rule_specs
+
+    load_rule_specs.cache_clear()
 
 
 def current_config_version(repo_root: Path) -> int:
