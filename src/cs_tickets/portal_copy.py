@@ -92,6 +92,26 @@ TICKET_PREVIEW_TBC_FILTER_META = (
 TICKET_PREVIEW_CAP_META = "First {shown} rows of the export (preview cap {limit})."
 TBC_REASON_SUMMARY_HEADING = "Why tickets need manual review"
 
+CATEGORY_FILTER_LABEL = "Category"
+CATEGORY_FILTER_ALL = "All categories"
+SUBJECT_FILTER_LABEL = "Subject contains"
+TAG_FILTER_LABEL = "Tag contains"
+TICKET_PREVIEW_CATEGORY_FILTER_META = (
+    'Showing {visible} of {matched_in_slice} in "{category}" '
+    "(first {limit} rows of export; {matched_total} total in run)."
+)
+TICKET_PREVIEW_CATEGORY_FILTER_META_FULL = (
+    'Showing {visible} of {matched_total} in "{category}" (full export).'
+)
+TICKET_PREVIEW_NO_MATCH = "No tickets match the current filters in this preview slice."
+SHOW_CLASSIFICATION_DETAILS_LABEL = "Show classification details"
+CLASSIFICATION_DETAILS_LOADING = "Loading classification details…"
+CLASSIFICATION_DETAILS_ERROR = "Could not load classification details."
+CLASSIFICATION_DETAILS_RULES_HEADING = "Rules that fired"
+CLASSIFICATION_DETAILS_CANDIDATES_HEADING = "Other candidates"
+CLASSIFICATION_DETAILS_SCORE_LABEL = "Score"
+CLASSIFICATION_DETAILS_MARGIN_NOTE = "Top candidates were close; assignment may be marginal."
+
 TECHNICAL_DETAILS_SUMMARY = "How Categorization Works (Technical)"
 TECHNICAL_DETAILS_BODY = """
 <p>Each ticket is assigned a five-level <strong>category</strong> using tag, subject, and description signals.

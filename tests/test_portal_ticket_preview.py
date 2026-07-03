@@ -31,3 +31,64 @@ def test_ticket_preview_html_survives_script_like_description() -> None:
     end = html.index("</script>", start)
     payload = json.loads(html[start:end])
     assert payload["rows"][0]["description"].startswith("</script>")
+
+
+def test_ticket_preview_payload_includes_all_tbc_rows_beyond_slice() -> None:
+    rows = []
+    tbc_reasons = {}
+    for i in range(300):
+        rows.append(
+            {
+                "id": str(i),
+                "subject": f"Ticket {i}",
+                "description": "x",
+                "tags": "[]",
+                "Tier1_Segment": "B2C",
+                "Tier2_Stream": "A",
+                "Tier3_Cat": "B",
+                "Tier4_Type": "TBC (Manual Review)" if i == 250 else "Other",
+                "Granular_Tech_UI_Type": "N/A",
+            }
+        )
+        if i == 250:
+            tbc_reasons[str(i)] = "zero_candidate"
+
+    html = ticket_preview_html(rows, tbc_reasons=tbc_reasons, limit=200)
+    start = html.index('type="application/json" id="classify-ticket-preview-data">') + len(
+        'type="application/json" id="classify-ticket-preview-data">'
+    )
+    end = html.index("</script>", start)
+    payload = json.loads(html[start:end])
+    assert len(payload["rows"]) == 200
+    assert payload["tbc_total"] == 1
+    assert [r["id"] for r in payload["tbc_rows"]] == ["250"]
+
+
+def test_ticket_preview_payload_includes_all_category_rows_beyond_slice() -> None:
+    rows = []
+    target_tier4 = "Rate or Renewal Inquiry"
+    for i in range(300):
+        rows.append(
+            {
+                "id": str(i),
+                "subject": f"Ticket {i}",
+                "description": "x",
+                "tags": "[]",
+                "Tier1_Segment": "B2C",
+                "Tier2_Stream": "A",
+                "Tier3_Cat": "B",
+                "Tier4_Type": target_tier4 if i == 250 else "Other",
+                "Granular_Tech_UI_Type": "N/A",
+            }
+        )
+
+    html = ticket_preview_html(rows, tbc_reasons={}, limit=200)
+    start = html.index('type="application/json" id="classify-ticket-preview-data">') + len(
+        'type="application/json" id="classify-ticket-preview-data">'
+    )
+    end = html.index("</script>", start)
+    payload = json.loads(html[start:end])
+    assert len(payload["rows"]) == 200
+    category_rows = payload["category_rows"][target_tier4]
+    assert len(category_rows) == 1
+    assert category_rows[0]["id"] == "250"

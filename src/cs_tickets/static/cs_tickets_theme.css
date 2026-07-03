@@ -953,6 +953,53 @@ body.upload-page {
   margin: 0.75rem 0;
 }
 
+.ticket-preview-filter select,
+.ticket-preview-filter input[type="search"] {
+  margin-left: 0.35rem;
+  min-width: 10rem;
+}
+
+.ticket-preview-category-meta,
+.ticket-preview-no-match {
+  margin: 0.25rem 0;
+}
+
+.stats-table .tier-stats-row--selectable {
+  cursor: pointer;
+}
+
+.stats-table .tier-stats-row--selectable:hover {
+  background: color-mix(in srgb, var(--primary, #2563eb) 8%, transparent);
+}
+
+.stats-table .tier-stats-row--active {
+  background: color-mix(in srgb, var(--primary, #2563eb) 14%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--primary, #2563eb) 40%, transparent);
+  outline-offset: -2px;
+}
+
+.ticket-preview-explain-btn {
+  margin-top: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.classification-explain {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+
+.classification-explain-heading {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.95rem;
+}
+
+.classification-explain-rules {
+  margin: 0.35rem 0;
+  padding-left: 1.25rem;
+}
+
 table.ticket-preview-table:not(.ticket-preview-table--expanded) .preview-col-detail {
   display: none;
 }

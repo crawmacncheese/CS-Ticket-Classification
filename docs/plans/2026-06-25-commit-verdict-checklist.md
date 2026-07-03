@@ -20,6 +20,8 @@
 
 **Inspiration:** Agent-as-a-Judge / Auto-Eval Judge research — modular evaluation via explicit binary criteria rather than opaque holistic scoring. This project adopts the **checklist decomposition pattern** only; it does **not** introduce LLM judges or trace evaluation of agent logs.
 
+**Cross-project reference:** The ai-seo `rule_extract` evaluation plans (`rule-extract-layer1-evaluation.md`, superseded `rule-extract-layer2-agent-judge.md`, merged `rule-extract-evaluation-redesign.md`) independently arrived at the same practical conclusion: **deterministic check registries over captured pipeline snapshots**, not LLM criteria generators or RAG artifact parsers, for CI-safe offline evaluation. This document maps those patterns onto Training commit preview.
+
 ---
 
 ## Context
@@ -209,6 +211,158 @@ Optional: cache `CommitVerdict` on `BatchCompareResult` later if profiling shows
 | Fixed order: data_quality → coverage → impact → mechanism | Snapshot tests and portal rendering depend on consistent ordering |
 | Within category, order matches verdict priority where applicable | Coverage gates before impact gates |
 
+### D16 — Three evaluation gates (G0 / G1 / G2), not one monolithic score
+
+| Gate | Question | This plan |
+|------|----------|-----------|
+| **G0 — Operations** | Did the preview run correctly on real input? | `data_quality` checks: `export_has_tickets`, `no_duplicate_ticket_ids` |
+| **G1 — Evidence / mechanism** | Are headline deltas explained by known mechanisms? | `coverage`, `impact`, `mechanism` checks over `BatchCompareResult` |
+| **G2 — Predictive** | Does the change align with human ground truth? | **Out of scope** — future `tools/eval_alignment.py` / analyst gold-set |
+
+**Rationale (from ai-seo G0/G1/G2 split):** Operational health, mechanism faithfulness, and predictive accuracy are **orthogonal**. A commit can show net TBC improvement (G1 impact pass) while regressions exceed gap fixes (G1 impact warn) or while human labels disagree (G2 fail). The checklist makes G0+G1 explicit; G2 stays a separate track per [prd.md](../prd.md) Phase 3.
+
+**Rejected:** Single composite score (e.g. 0–100) replacing verdict bands — would obsolete `VERDICT_MESSAGES` and hide which gate failed.
+
+### D17 — Check function registry, not inline conditionals
+
+| Decision | Rationale |
+|----------|-----------|
+| Each check is a small pure function: `(BatchCompareResult) → CommitCheckItem` | Matches ai-seo `CheckFn = Callable[[KnowledgeItem, PipelineSnapshot], CheckResult]` pattern — independently testable, easy to add gates |
+| Registry dict keyed by check `id` | `COMMIT_CHECKS: tuple[CheckFn, ...]` in stable order; `build_commit_checklist()` maps registry → items |
+
+```python
+CheckFn = Callable[[BatchCompareResult], CommitCheckItem]
+
+COMMIT_CHECKS: tuple[CheckFn, ...] = (
+    check_export_has_tickets,
+    check_no_duplicate_ticket_ids,
+    check_rule_coverage_majority,
+    # ...
+)
+```
+
+**Rejected:** One large `build_commit_checklist()` with 15 inline `if` blocks — harder to unit-test individual gates and mirror in YAML catalog.
+
+### D18 — Versioned criteria catalog in YAML (optional source of metadata)
+
+| Decision | Rationale |
+|----------|-----------|
+| Ship `doc/commit_verdict_criteria.yaml` (or `src/cs_tickets/commit_verdict_criteria.yaml`) with check `id`, `question`, `category`, `severity`, `handler` | Mirrors ai-seo `evaluation/layer2/criteria/route_*.yaml` — reproducible catalog for docs, portal copy, and CI |
+| **Python registry remains authoritative** for pass/fail logic | YAML is metadata + documentation; eval code does not parse YAML at runtime in Phase 1 (avoids drift) |
+
+Phase 1.5 optional: test that every registry `id` has a YAML row and vice versa.
+
+**Rejected:** LLM-generated criteria per run — ai-seo Layer 2 superseded this path in favor of templates (`rule-extract-evaluation-redesign.md`).
+
+### D19 — `critical` vs `warn` check severity (in addition to band-driving `fail`)
+
+| Decision | Rationale |
+|----------|-----------|
+| `severity: critical` — failing this check can drive a negative verdict band or should block CI assertion | Maps to ai-seo G1 `critical` checks: `rule_coverage_majority`, `selection_not_mostly_no_op`, compound `risky` inputs |
+| `severity: warn` — surfaced in checklist and `alerts[]` but does not change band alone | e.g. `no_duplicate_ticket_ids`, `regressions_within_gap_fixes` when regression > 0 but ≤ gap_fix |
+| `severity: info` — diagnostic only | mechanism delta checks |
+
+Verdict bands stay four-way; we do **not** add ai-seo's `passed_with_warnings` as a fifth band — portal already uses `review` for ambiguous cases.
+
+### D20 — Evaluate from captured `BatchCompareResult`, never re-classify
+
+| Decision | Rationale |
+|----------|-----------|
+| Checklist reads only `BatchCompareResult` produced by `run_commit_simulation()` | Same as ai-seo **PipelineSnapshot** rule: judge audits the **actual run**, not a replay from workbook rows or re-derived NDJSON |
+| `changed_rows` proof for per-ticket extensions comes from enriched rows already in `result.combined` | Avoids "judge drift" where re-running `classify_row_with_explanation()` disagrees with simulation |
+
+**Rejected:** Re-classifying tickets inside `build_commit_checklist()` — would hide bugs in compare aggregation and double I/O cost.
+
+### D21 — Structured `alerts[]` alongside checklist
+
+| Decision | Rationale |
+|----------|-----------|
+| Emit `alerts` in `commit_verdict.json` for failed `critical`/`warn` checks | Mirrors ai-seo `Alert` schema: `{level, stage, metric, value, threshold, message}` |
+| `stage` = check category (`coverage`, `impact`, …); `metric` = check `id` | Enables `run_allowlist_test.py` and markdown summaries to filter without parsing full checklist |
+
+Example:
+
+```json
+{
+  "level": "warn",
+  "stage": "data_quality",
+  "metric": "no_duplicate_ticket_ids",
+  "value": 3,
+  "threshold": 0,
+  "message": "3 duplicate ticket IDs deduped — summed TBC counters may disagree with changed_rows"
+}
+```
+
+### D22 — `top_failures` rollup per category
+
+| Decision | Rationale |
+|----------|-----------|
+| `checklist.top_failures: {coverage: [...], impact: [...], ...}` — ids of failed/skipped critical checks | Mirrors ai-seo `evidence.per_route.top_failures` for quick CLI/portal scanning |
+| Populated from checklist items where `status in (fail, skip)` and `severity in (critical, fail)` | Skip included when analyst omitted no-op analysis |
+
+### D23 — CLI `exit_code` and optional baseline comparison
+
+| Decision | Rationale |
+|----------|-----------|
+| Batch CLI returns `0` = no fail-level alerts; `1` = any critical check failed or `risky` band; `2` = data quality fail (empty export) | Matches ai-seo eval exit codes — advisory for humans, useful in CI wrappers |
+| Optional `--eval-baseline reports/baselines/commit_verdict_baseline.json` | Delta alerts on `net_tbc_improvement`, `gap_fix` count vs last known-good Training run |
+
+**Rejected:** Hard-blocking Training commit from CLI exit code — portal commit remains always allowed (product rule unchanged).
+
+### D24 — Verbose vs summary report modes
+
+| Decision | Rationale |
+|----------|-----------|
+| Default `commit_verdict.json`: checklist items + summary counts + `top_failures` | Small files for typical portal/CLI runs |
+| `--eval-verbose` (batch CLI): include per-check `handler` name and full `observed` blobs | Mirrors ai-seo `--eval-layer2-verbose` / `evidence.checks` per-item detail |
+| Per-ticket check results deferred | Belongs to ticket preview + `changed_rows` enrichment, not commit-level checklist |
+
+### D25 — Relative vs absolute evaluation framing (dual perspective)
+
+| Decision | Rationale |
+|----------|-----------|
+| **Relative checks** — compare old vs new allow-list on same export (`tbc_old` vs `tbc_new`, `margin_loss_*`, `zero_candidate_*`) | Analogous to ai-seo `relative_format_judge` — "did the change improve things?" |
+| **Absolute checks** — properties of the candidate config (`tuples_with_rules_count`, `n_selected`, rule coverage fraction) | Analogous to ai-seo `absolute_format_judge` — "is the new config well-formed?" |
+| Verdict bands synthesize **both** perspectives | `rules_needed` = absolute coverage fail; `strong_commit` / `risky` = relative impact + mechanism |
+
+No second judge module or score fusion — the checklist categories encode the split.
+
+### D26 — Handler taxonomy for checks (Composer-lite)
+
+| `handler` | Check types | Examples |
+|-----------|-------------|----------|
+| `statistical` | Counts, rates, deltas from `AllowlistCompareResult` | `net_tbc_improved`, `margin_loss_increased` |
+| `structural` | Allow-list / rules config | `rule_coverage_majority` |
+| `outcome` | `outcome_counts`, `gap_fix_by_mechanism` | `has_gap_fixes`, `allowlist_gap_fixes_present` |
+| `integrity` | Input batch quality | `export_has_tickets`, `no_duplicate_ticket_ids` |
+
+**Rationale:** Mirrors ai-seo C³ routing (`statistical`, `coding`, `narrative`) without separate handler modules — a `handler` string on each `CommitCheckItem` documents verification type for maintainers and future per-ticket extensions.
+
+**Rejected (Phase 1):** Pluggable handler subpackages — overkill for ~15 aggregate checks.
+
+---
+
+## Evaluation stack
+
+```
+run_commit_simulation() → BatchCompareResult  (captured snapshot)
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+         G0 data_quality   G1 coverage     G1 impact + mechanism
+         (operations)      (absolute)      (relative A/B)
+              │               │               │
+              └───────────────┴───────────────┘
+                              ▼
+                    build_commit_checklist()
+                              ▼
+                    classify_verdict_from_checklist()
+                              ▼
+              commit_verdict.json (schema v2) + alerts[]
+```
+
+G2 (human gold-set / holdout accuracy) is a **future** gate on the same NDJSON fixture, not part of this checklist.
+
 ---
 
 ## Module interface
@@ -242,6 +396,7 @@ class CommitCheckItem:
     status: CheckStatus
     category: CheckCategory
     severity: CheckSeverity
+    handler: Literal["statistical", "structural", "outcome", "integrity"]
     observed: dict[str, Any]
     threshold: dict[str, Any] | None = None
     detail: str | None = None
@@ -266,6 +421,48 @@ def classify_verdict_from_checklist(
 def evaluate_commit_verdict(result: BatchCompareResult) -> CommitVerdict: ...
 
 def checklist_to_dict(verdict: CommitVerdict) -> dict[str, Any]: ...
+
+def build_alerts_from_checklist(checklist: tuple[CommitCheckItem, ...]) -> list[dict[str, Any]]: ...
+
+def top_failures_by_category(checklist: tuple[CommitCheckItem, ...]) -> dict[str, list[str]]: ...
+```
+
+### Check registry layout
+
+```
+src/cs_tickets/
+  commit_verdict_checklist.py    # types, evaluate_commit_verdict, verdict synthesis
+  commit_verdict_checks.py       # COMMIT_CHECKS registry + individual check_* functions
+doc/
+  commit_verdict_criteria.yaml   # id, question, category, severity, handler (metadata catalog)
+```
+
+```python
+# commit_verdict_checks.py (sketch)
+CheckFn = Callable[[BatchCompareResult], CommitCheckItem]
+
+def check_rule_coverage_majority(result: BatchCompareResult) -> CommitCheckItem:
+    n = len(result.selected_tuples)
+    observed = {"tuples_with_rules_count": result.tuples_with_rules_count, "selected_tuple_count": n}
+    threshold = {"min_fraction": 0.5}
+    status = CheckStatus.PASS if result.tuples_with_rules_count >= math.ceil(0.5 * n) else CheckStatus.FAIL
+    return CommitCheckItem(
+        id="rule_coverage_majority",
+        question="Do at least half of selected categories have routing rules?",
+        status=status,
+        category="coverage",
+        severity="critical",
+        handler="structural",
+        observed=observed,
+        threshold=threshold,
+    )
+
+COMMIT_CHECKS: tuple[CheckFn, ...] = (
+    check_export_has_tickets,
+    check_no_duplicate_ticket_ids,
+    check_rule_coverage_majority,
+    # ... stable order per D15
+)
 ```
 
 ### Integration points
@@ -285,41 +482,41 @@ def checklist_to_dict(verdict: CommitVerdict) -> dict[str, Any]: ...
 
 ### Data quality
 
-| `id` | Question | PASS | FAIL | SKIP/NA | Severity | Drives band |
-|------|----------|------|------|---------|----------|-------------|
-| `export_has_tickets` | Did the preview classify at least one ticket? | `combined.total > 0` | `total == 0` | — | info | No |
-| `no_duplicate_ticket_ids` | Were duplicate ticket IDs avoided across files? | `duplicate_ticket_ids == []` | list non-empty | — | warn | No |
+| `id` | Question | PASS | FAIL | SKIP/NA | Severity | Handler | Drives band |
+|------|----------|------|------|---------|----------|---------|-------------|
+| `export_has_tickets` | Did the preview classify at least one ticket? | `combined.total > 0` | `total == 0` | — | info | integrity | No |
+| `no_duplicate_ticket_ids` | Were duplicate ticket IDs avoided across files? | `duplicate_ticket_ids == []` | list non-empty | — | warn | integrity | No |
 
 ### Coverage
 
-| `id` | Question | PASS | FAIL | SKIP | Severity | Drives band |
-|------|----------|------|------|------|----------|-------------|
-| `rule_coverage_majority` | Do at least half of selected categories have routing rules? | `tuples_with_rules_count >= ceil(0.5 * n_selected)` | below threshold | `n_selected == 0` → NA | fail | **Yes → rules_needed** |
-| `selection_not_mostly_no_op` | Did most selected categories change tickets on this export? | `no_op_rate < 0.5` | `no_op_rate >= 0.5` | `selection_no_op_count is null` | fail | **Yes → rules_needed** |
+| `id` | Question | PASS | FAIL | SKIP | Severity | Handler | Drives band |
+|------|----------|------|------|------|----------|---------|-------------|
+| `rule_coverage_majority` | Do at least half of selected categories have routing rules? | `tuples_with_rules_count >= ceil(0.5 * n_selected)` | below threshold | `n_selected == 0` → NA | critical | structural | **Yes → rules_needed** |
+| `selection_not_mostly_no_op` | Did most selected categories change tickets on this export? | `no_op_rate < 0.5` | `no_op_rate >= 0.5` | `selection_no_op_count is null` | critical | statistical | **Yes → rules_needed** |
 
 Note: `selection_mostly_no_op` is the **fail** condition id used internally by verdict priority (alias of inverted `selection_not_mostly_no_op`).
 
 ### Impact
 
-| `id` | Question | PASS | FAIL | Severity | Drives band |
-|------|----------|------|------|----------|-------------|
-| `net_tbc_improved` | Did manual-review (TBC) count decrease? | `tbc_old > tbc_new` | else | info | Contributes to **strong_commit** |
-| `net_tbc_regressed` | Did manual-review (TBC) count increase? | `tbc_old < tbc_new` | else | info | Contributes to **risky** |
-| `has_gap_fixes` | Did any TBC tickets receive a concrete tier? | `gap_fix > 0` | `gap_fix == 0` | info | Contributes to **strong_commit** |
-| `regressions_within_gap_fixes` | Are mis-routes no worse than fixes? | `regression <= gap_fix` | `regression > gap_fix` | warn | Contributes to **strong_commit** |
-| `has_regressions` | Did any tickets move into TBC? | `regression > 0` | `regression == 0` | info | No (diagnostic) |
-| `has_reroutes` | Did any classified tickets change tier without TBC transition? | `reroute > 0` | `reroute == 0` | info | No |
+| `id` | Question | PASS | FAIL | Severity | Handler | Drives band |
+|------|----------|------|------|----------|---------|-------------|
+| `net_tbc_improved` | Did manual-review (TBC) count decrease? | `tbc_old > tbc_new` | else | info | statistical | Contributes to **strong_commit** |
+| `net_tbc_regressed` | Did manual-review (TBC) count increase? | `tbc_old < tbc_new` | else | info | statistical | Contributes to **risky** |
+| `has_gap_fixes` | Did any TBC tickets receive a concrete tier? | `gap_fix > 0` | `gap_fix == 0` | info | outcome | Contributes to **strong_commit** |
+| `regressions_within_gap_fixes` | Are mis-routes no worse than fixes? | `regression <= gap_fix` | `regression > gap_fix` | warn | outcome | Contributes to **strong_commit** |
+| `has_regressions` | Did any tickets move into TBC? | `regression > 0` | `regression == 0` | info | outcome | No (diagnostic) |
+| `has_reroutes` | Did any classified tickets change tier without TBC transition? | `reroute > 0` | `reroute == 0` | info | outcome | No |
 
 ### Mechanism
 
-| `id` | Question | PASS | FAIL | Severity | Drives band |
-|------|----------|------|------|----------|-------------|
-| `zero_candidate_unchanged` | Did allow-list-gap TBC count stay the same? | `zero_candidate_new == zero_candidate_old` | differ | info | Contributes to **risky** |
-| `margin_loss_increased` | Did contested TBC (lost margin) increase? | `margin_loss_new > margin_loss_old` | else | info | Contributes to **risky** |
-| `allowlist_gap_fixes_present` | Were any fixes from missing categories? | `allowlist_gap > 0` | `== 0` | info | No |
-| `scoring_recovery_fixes_present` | Were any fixes from scoring competition? | `scoring_recovery > 0` | `== 0` | info | No |
-| `below_threshold_improved` | Did weak-signal TBC decrease? | `below_threshold_new < below_threshold_old` | else | info | No |
-| `allowlist_filtered_improved` | Did rules-blocked TBC decrease? | `allowlist_filtered_new < allowlist_filtered_old` | else | info | No |
+| `id` | Question | PASS | FAIL | Severity | Handler | Drives band |
+|------|----------|------|------|----------|---------|-------------|
+| `zero_candidate_unchanged` | Did allow-list-gap TBC count stay the same? | `zero_candidate_new == zero_candidate_old` | differ | info | statistical | Contributes to **risky** |
+| `margin_loss_increased` | Did contested TBC (lost margin) increase? | `margin_loss_new > margin_loss_old` | else | info | statistical | Contributes to **risky** |
+| `allowlist_gap_fixes_present` | Were any fixes from missing categories? | `allowlist_gap > 0` | `== 0` | info | outcome | No |
+| `scoring_recovery_fixes_present` | Were any fixes from scoring competition? | `scoring_recovery > 0` | `== 0` | info | outcome | No |
+| `below_threshold_improved` | Did weak-signal TBC decrease? | `below_threshold_new < below_threshold_old` | else | info | statistical | No |
+| `allowlist_filtered_improved` | Did rules-blocked TBC decrease? | `allowlist_filtered_new < allowlist_filtered_old` | else | info | statistical | No |
 
 ---
 
@@ -350,13 +547,20 @@ Evaluate in order; **first matching rule wins**:
     "passed": 9,
     "failed": 1,
     "skipped": 2,
+    "top_failures": {
+      "coverage": [],
+      "impact": [],
+      "mechanism": [],
+      "data_quality": []
+    },
     "items": [
       {
         "id": "rule_coverage_majority",
         "question": "Do at least half of selected categories have routing rules?",
         "status": "pass",
         "category": "coverage",
-        "severity": "fail",
+        "severity": "critical",
+        "handler": "structural",
         "observed": {
           "tuples_with_rules_count": 22,
           "selected_tuple_count": 22
@@ -366,12 +570,43 @@ Evaluate in order; **first matching rule wins**:
       }
     ]
   },
+  "alerts": [
+    {
+      "level": "info",
+      "stage": "impact",
+      "metric": "has_regressions",
+      "value": 1,
+      "threshold": 0,
+      "message": "1 ticket moved into manual review — within gap_fix budget"
+    }
+  ],
+  "baseline_comparison": null,
   "combined_is_synthetic": true,
   "net_tbc_improvement": 4
 }
 ```
 
-All v1 fields remain present. Parsers should check `schema_version >= 2` before reading `checklist`.
+All v1 fields remain present. Parsers should check `schema_version >= 2` before reading `checklist` or `alerts`.
+
+### `baseline_comparison` (optional, Phase 1.5)
+
+When `--eval-baseline` is passed to the batch CLI:
+
+```json
+{
+  "baseline_comparison": {
+    "baseline_path": "reports/baselines/commit_verdict_baseline.json",
+    "baseline_build_id": "2026-06-20-probe",
+    "deltas": {
+      "net_tbc_improvement": { "current": 4, "baseline": 2, "delta": 2 },
+      "outcome_counts.gap_fix": { "current": 5, "baseline": 3, "delta": 2 }
+    },
+    "regressions": []
+  }
+}
+```
+
+Delta **regressions** list check ids or metrics that worsened vs baseline (warn only).
 
 ---
 
@@ -437,10 +672,20 @@ Extend `tests/test_batch_allowlist_analysis.py`:
 
 | Task | Module |
 |------|--------|
-| Add `commit_verdict_checklist.py` with types + evaluation | new file |
+| Add `commit_verdict_checks.py` registry + individual `check_*` functions | new file |
+| Add `commit_verdict_checklist.py` with types + `evaluate_commit_verdict` | new file |
+| Add `doc/commit_verdict_criteria.yaml` metadata catalog | new file |
 | Refactor `classify_verdict_band()` to delegate | `batch_allowlist_analysis.py` |
-| Emit `checklist` in `write_batch_reports()` | `batch_allowlist_analysis.py` |
-| Parity + trigger tests | `tests/test_batch_allowlist_analysis.py` |
+| Emit `checklist`, `alerts`, `top_failures` in `write_batch_reports()` | `batch_allowlist_analysis.py` |
+| Parity + trigger + registry/YAML parity tests | `tests/test_batch_allowlist_analysis.py` |
+
+### Phase 1.5 — CLI hardening (optional)
+
+| Task | Module |
+|------|--------|
+| `exit_code` from alerts + band | batch CLI |
+| `--eval-baseline`, `baseline_comparison` block | batch CLI |
+| `--eval-verbose` for expanded `observed` in JSON | batch CLI |
 
 ### Phase 2 — Portal presentation
 
@@ -455,17 +700,36 @@ Extend `tests/test_batch_allowlist_analysis.py`:
 | Task | Module |
 |------|--------|
 | `assertions.checklist` in YAML test configs | `tools/run_allowlist_test.py` |
+| `assertions.alerts` — max fail count, required check ids | `tools/run_allowlist_test.py` |
+
+---
+
+## Investigation runbook
+
+When a Training preview verdict surprises an analyst, use this order (adapted from ai-seo eval runbook §10.2):
+
+| Symptom | Check first | Likely cause |
+|---------|-------------|--------------|
+| Band is `rules_needed` | `checklist.top_failures.coverage` | Missing routing rules or high no-op rate on this export |
+| Band is `risky` | `margin_loss_increased` + `net_tbc_regressed` | Scoring competition — new tuples stole margin, not allow-list gap |
+| Band is `review` despite TBC drop | `has_gap_fixes` vs `scoring_recovery_fixes_present` | TBC improved via competition reroute, not allow-list gap fix |
+| `no_duplicate_ticket_ids` warn | `duplicate_ticket_ids` list in JSON | Overlapping NDJSON files — summed counters unreliable |
+| `export_has_tickets` fail | `combined.total` | Empty or filtered export (check bad-CSAT filter) |
+| Strong headline TBC delta but `review` band | `regressions_within_gap_fixes` | More regressions than gap fixes |
+| CI `exit_code 1` but analyst wants to commit | `alerts[]` where `level == fail` | Advisory only — portal commit still allowed |
 
 ---
 
 ## Non-goals
 
-- LLM-generated criteria or Agent-as-a-Judge trace evaluation
+- LLM-generated criteria or Agent-as-a-Judge trace evaluation (ai-seo Layer 2 superseded this path — see cross-project note above)
+- RAG / embedding retrieval over ticket text for commit-level checks (bounded keyed lookup from `BatchCompareResult` suffices)
 - Per-ticket proof snippets in checklist (belongs to ticket preview / `RuleEvidence` — separate Artifact Parser track)
-- Blocking Training commit based on checklist failures
-- Changing verdict band thresholds or adding new bands
+- Per-ticket quarantine / `blocked_ticket_ids` at commit level (future: flag rows in `changed_rows` with failed per-ticket checks)
+- Blocking Training commit based on checklist failures or CLI `exit_code`
+- Changing verdict band thresholds or adding new bands (including ai-seo-style `passed_with_warnings`)
 - Modifying `AllowlistCompareResult`, classifier, or allow-list merge semantics
-- Human gold-set alignment metrics (future Phase 3 feedback loop per [prd.md](../prd.md))
+- Human gold-set alignment metrics — G2 gate (future Phase 3 feedback loop per [prd.md](../prd.md))
 
 ---
 
@@ -477,7 +741,68 @@ Extend `tests/test_batch_allowlist_analysis.py`:
 | Analyst overload from too many checks | Group by category; collapse by default; severity hides info-only rows optionally |
 | `schema_version` confusion | Document v1 vs v2; v1 fields unchanged |
 | Skipped no-op check misread as pass | Distinct `skip` status + portal copy "Not analyzed — enable no-op check" |
+| Skipped no-op check misread as pass | Distinct `skip` status + portal copy "Not analyzed — enable no-op check" |
 | Combined synthetic metrics misinterpreted | `export_has_tickets` + duplicate ID warn checks in data_quality category |
+| YAML catalog drifts from Python registry | Phase 1.5 test: every `id` in YAML ↔ registry |
+| Analyst confusion from `alerts[]` vs band | Band drives banner; alerts are supplementary detail in collapsed checklist |
+
+---
+
+## Appendix A — Cross-project mapping (ai-seo → cs-tickets)
+
+| ai-seo concept | Source doc | cs-tickets equivalent |
+|----------------|------------|----------------------|
+| G0 Operations gate | `rule-extract-layer1-evaluation.md` | `data_quality` checks |
+| G1 Evidence gate | `rule-extract-evaluation-redesign.md` | `coverage` + `impact` + `mechanism` checks |
+| G2 Predictive holdout | same | Future analyst gold-set / `eval_alignment` |
+| `PipelineSnapshot` | layer1 eval §2.2 | `BatchCompareResult` from `run_commit_simulation()` |
+| Check function registry | G1 §4 | `commit_verdict_checks.COMMIT_CHECKS` |
+| Versioned criteria YAML | Layer 2 §3.1 (templates) | `doc/commit_verdict_criteria.yaml` |
+| `critical` / `warn` severity | Layer 2 §3.4 | `severity` on `CommitCheckItem` |
+| `alerts[]` with level/stage/metric | layer1 eval report schema | `commit_verdict.json` `alerts` |
+| `top_failures` per route | Layer 2 report | `checklist.top_failures` per category |
+| `blocked_item_ids` quarantine | G1 evidence | Future per-ticket flags on `changed_rows` |
+| Item quarantine vs full-run fail | Layer 2 D7 | Advisory bands — never block whole Training commit |
+| Proof lookup not RAG | layer1 D3, Layer 2 D9 | `observed`/`threshold` dicts from snapshot fields |
+| Judge must not re-derive producer | Layer 2 D4 | D20 — no re-classify in checklist |
+| Relative vs absolute judges | `evaluate-agent-design.md` | D25 — impact vs coverage categories |
+| LLM fusion / narrative handler | Layer 2 (superseded) | **Not adopted** |
+| `exit_code` 0/1/2 | layer1 CLI §8 | D23 batch CLI |
+| `--eval-verbose` | layer1 §8 | D24 |
+| `--eval-baseline` | layer1 §8 | D23 baseline_comparison |
+| Investigation runbook | layer1 §10.2 | Investigation runbook section above |
+
+---
+
+## Appendix B — Criteria YAML catalog (sketch)
+
+```yaml
+# doc/commit_verdict_criteria.yaml
+version: 1
+checks:
+  - id: rule_coverage_majority
+    question: "Do at least half of selected categories have routing rules?"
+    category: coverage
+    severity: critical
+    handler: structural
+    drives_band: rules_needed
+
+  - id: net_tbc_improved
+    question: "Did manual-review (TBC) count decrease?"
+    category: impact
+    severity: info
+    handler: statistical
+    drives_band: strong_commit  # compound with has_gap_fixes, regressions_within_gap_fixes
+
+  - id: margin_loss_increased
+    question: "Did contested TBC (lost margin) increase?"
+    category: mechanism
+    severity: info
+    handler: statistical
+    drives_band: risky  # compound
+```
+
+Python registry is authoritative for thresholds and pass/fail logic; YAML documents intent for analysts and reviewers.
 
 ---
 
@@ -495,10 +820,11 @@ Extend `tests/test_batch_allowlist_analysis.py`:
 ## Success criteria
 
 1. `evaluate_commit_verdict(result).band` matches `classify_verdict_band(result)` for all existing parametrized fixtures.
-2. `commit_verdict.json` with `schema_version: 2` includes `checklist` with stable item ids and correct pass/fail/skip counts.
+2. `commit_verdict.json` with `schema_version: 2` includes `checklist`, `alerts`, and `top_failures` with stable item ids.
 3. `run_allowlist_test.py` default assertions on `verdict_band` unchanged.
 4. No change to classification output, Training commit disk semantics, or portal band headlines.
 5. Phase 2: portal checklist rows match JSON emitted for the same `BatchCompareResult`.
+6. Every `COMMIT_CHECKS` id has a row in `commit_verdict_criteria.yaml` (Phase 1.5).
 
 ---
 
@@ -511,3 +837,10 @@ Extend `tests/test_batch_allowlist_analysis.py`:
 - [2026-06-10-training-ux-wizard-and-impact-preview.md](./2026-06-10-training-ux-wizard-and-impact-preview.md) — verdict banner rules
 - `src/cs_tickets/batch_allowlist_analysis.py` — `classify_verdict_band()`, `write_batch_reports()`
 - `reports/run-1/commit_verdict.json` — example v1 output
+
+### Cross-project (ai-seo evaluation plans)
+
+- `rule-extract-layer1-evaluation.md` — G0/G1/G2 gates, check registry, `PipelineSnapshot`, alerts, CLI flags
+- `rule-extract-evaluation-redesign.md` — merged practical redesign; deterministic-first principles
+- `rule-extract-layer2-agent-judge.md` — **superseded** full Agent-as-a-Judge design; useful for module naming and appendix mapping only
+- `evaluate-agent-design.md` — relative vs absolute judge framing; deterministic `@tool` pattern

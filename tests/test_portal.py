@@ -79,9 +79,52 @@ def test_run_upload_ndjson(repo_root: Path) -> None:
     assert "Why tickets need manual review" in r.text
     assert 'id="classify-ticket-preview-data"' in r.text
     assert "preview-col-detail' hidden" in r.text or 'preview-col-detail" hidden' in r.text
+    assert "ticket-preview-category-filter" in r.text
+    assert "ticket-preview-subject-filter" in r.text
+    assert 'id="ticket-preview"' in r.text
+    assert "data-run-id=" in r.text
+    assert "tier-stats-row--selectable" in r.text
+    assert '"categories"' in r.text
+    assert '"category_rows"' in r.text
     assert "readme-doc" not in r.text
     run_id = next(iter(portal_app._RUNS))
     assert f'/download/{run_id}"' in r.text
+
+
+def test_explain_endpoint_returns_json(repo_root: Path) -> None:
+    export = repo_root / "tests" / "fixtures" / "five_tickets.ndjson"
+    if not export.is_file():
+        pytest.skip("fixture missing")
+    portal_app._RUNS.clear()
+    body = export.read_bytes()
+    r = client.post(
+        "/run",
+        files={"export": ("sample.ndjson", body, "application/octet-stream")},
+    )
+    assert r.status_code == 200
+    run_id = next(iter(portal_app._RUNS))
+    record = portal_app._RUNS[run_id]
+    ticket_id = str(record.rows[0]["id"])
+    from cs_tickets.portal_explain import explain_ticket_payload
+    from cs_tickets.runtime_config import load_runtime_rule_specs
+
+    expected = explain_ticket_payload(
+        record.rows[0],
+        portal_app._default_allowlist(),
+        rule_specs=load_runtime_rule_specs(repo_root),
+    )
+    resp = client.get(f"/run/{run_id}/explain/{ticket_id}?format=json")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["tier"] == expected["tier"]
+    assert data["score"] == expected["score"]
+    assert "evidence" in data
+
+    missing = client.get(f"/run/{run_id}/explain/missing-id?format=json")
+    assert missing.status_code == 404
+
+    bad_run = client.get("/run/not-a-run/explain/1?format=json")
+    assert bad_run.status_code == 404
 
 
 def test_download_workbook_has_tickets_and_tier_tabs(repo_root: Path) -> None:

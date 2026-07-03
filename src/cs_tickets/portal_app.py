@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.staticfiles import StaticFiles
 
 from cs_tickets.batch_allowlist_analysis import run_commit_simulation
@@ -68,8 +68,10 @@ from cs_tickets.portal_copy import (
     TECHNICAL_DETAILS_SUMMARY,
     TICKET_PREVIEW_HEADING,
 )
+from cs_tickets.portal_explain import explain_ticket_payload
 from cs_tickets.portal_layout import portal_page_html
 from cs_tickets.portal_stats import (
+    category_index,
     classify_run_counts,
     classify_run_summary_html,
     tier_stats_table_html,
@@ -247,7 +249,7 @@ def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
         title=REFERENCE_CATEGORIES_PAGE_TITLE,
         active="learn",
         body=page_body,
-        extra_scripts=["/static/training.js?v=5", "/static/ticket_preview.js?v=3"],
+        extra_scripts=["/static/training.js?v=5", "/static/ticket_preview.js?v=6"],
     )
 
 
@@ -392,7 +394,12 @@ async def run_upload(
         summary_block = classify_run_summary_html(rows, warns=warns)
         reason_block = tbc_reason_summary_html(tbc_reasons, headline_tbc=counts.tbc)
         stats_block = tier_stats_table_html(rows)
-        preview_block = ticket_preview_html(rows, tbc_reasons=tbc_reasons)
+        preview_block = ticket_preview_html(
+            rows,
+            tbc_reasons=tbc_reasons,
+            categories=category_index(rows),
+            run_id=run_id,
+        )
         drive_html = _drive_result_html(drive_result, drive_error)
         filter_note = ""
         if bad_satisfaction_only:
@@ -421,7 +428,7 @@ async def run_upload(
     <div class="stats-wrap">{stats_block}</div>
 
     <h2 class="section-header">{TICKET_PREVIEW_HEADING}</h2>
-    {preview_block}
+    <div id="ticket-preview">{preview_block}</div>
 
     {_classify_technical_details_html()}
     """
@@ -429,7 +436,7 @@ async def run_upload(
             title="Categorization results",
             active="categorize",
             body=body,
-            extra_scripts=["/static/ticket_preview.js?v=3"],
+            extra_scripts=["/static/ticket_preview.js?v=6"],
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -460,6 +467,39 @@ def _drive_result_html(
     if drive_error and drive_upload_configured():
         return f'<p class="meta drive-warning">Google Drive upload failed: {_esc(drive_error)}</p>'
     return ""
+
+
+@app.get("/run/{run_id}/explain/{ticket_id}", response_model=None)
+def explain_ticket(
+    run_id: str,
+    ticket_id: str,
+    format: str | None = None,
+) -> Response:
+    record = _RUNS.get(run_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Unknown or expired run_id")
+    row = next((r for r in record.rows if str(r.get("id") or "") == ticket_id), None)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Ticket not found in this run")
+    repo_root = _repo_root()
+    allow = _default_allowlist()
+    rule_specs = load_runtime_rule_specs(repo_root)
+    payload = explain_ticket_payload(row, allow, rule_specs=rule_specs)
+    if format == "json":
+        return JSONResponse(payload)
+    tier_path = " → ".join(payload["tier"])
+    rules = "".join(
+        f"<li><code>{_esc(ev['rule_id'])}</code> "
+        f"(weight {ev['weight']}, {_esc(ev['signal'])})</li>"
+        for ev in payload["evidence"]
+    )
+    html = f"""
+<div class="classification-explain">
+  <p><strong>Category:</strong> {_esc(tier_path)}</p>
+  <p><strong>Score:</strong> {payload['score']}</p>
+  <ul>{rules or '<li>No rules fired</li>'}</ul>
+</div>""".strip()
+    return HTMLResponse(html)
 
 
 @app.get("/download/{run_id}")

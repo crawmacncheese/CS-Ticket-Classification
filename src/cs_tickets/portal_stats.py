@@ -13,6 +13,7 @@ from cs_tickets.portal_copy import (
 )
 
 TIER_KEYS = ("Tier1_Segment", "Tier2_Stream", "Tier3_Cat", "Tier4_Type")
+TIER_FULL_KEYS = TIER_KEYS + ("Granular_Tech_UI_Type",)
 
 
 @dataclass(frozen=True)
@@ -97,7 +98,25 @@ def tbc_reason_summary_html(tbc_reasons: dict[str, str], *, headline_tbc: int) -
 </div>""".strip()
 
 
-def tier_stats_display_rows(rows: list[dict[str, Any]]) -> tuple[list[list[str]], int]:
+def category_index(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Distinct tier paths with counts, sorted by count desc then tier4."""
+    c: Counter[tuple[str, str, str, str, str]] = Counter()
+    for r in rows:
+        key = tuple(str(r.get(k) or "").strip() for k in TIER_FULL_KEYS)
+        c[key] += 1
+    return [
+        {
+            "tier4": tup[3],
+            "tier_tuple": list(tup),
+            "count": n,
+        }
+        for tup, n in sorted(c.items(), key=lambda x: (-x[1], x[0][3], x[0]))
+    ]
+
+
+def tier_stats_display_rows(
+    rows: list[dict[str, Any]],
+) -> tuple[list[list[str]], int, list[tuple[str, str, str, str]]]:
     """Return body rows [t1,t2,t3,t4,count_str] with pivot-style blanks for repeated parents, plus grand total."""
     c: Counter[tuple[str, str, str, str]] = Counter()
     for r in rows:
@@ -106,6 +125,7 @@ def tier_stats_display_rows(rows: list[dict[str, Any]]) -> tuple[list[list[str]]
     sorted_items = sorted(c.items(), key=lambda x: x[0])
     prev: tuple[str | None, str | None, str | None, str | None] = (None, None, None, None)
     out: list[list[str]] = []
+    tuples: list[tuple[str, str, str, str]] = []
     grand = 0
     for (t1, t2, t3, t4), n in sorted_items:
         grand += n
@@ -114,13 +134,14 @@ def tier_stats_display_rows(rows: list[dict[str, Any]]) -> tuple[list[list[str]]
         c3 = t3 if prev[0] is None or t1 != prev[0] or t2 != prev[1] or t3 != prev[2] else ""
         c4 = t4
         out.append([c1, c2, c3, c4, str(n)])
+        tuples.append((t1, t2, t3, t4))
         prev = (t1, t2, t3, t4)
-    return out, grand
+    return out, grand, tuples
 
 
 def tier_stats_sheet_rows(rows: list[dict[str, Any]]) -> tuple[list[str], list[list[str | int]]]:
     """Header + rows for spreadsheet export: pivot-style tiers, integer counts, trailing Grand Total row."""
-    body, grand = tier_stats_display_rows(rows)
+    body, grand, _ = tier_stats_display_rows(rows)
     header = ["Tier1_Segment", "Tier2_Stream", "Tier3_Cat", "Tier4_Type", "COUNTA of id"]
     data: list[list[str | int]] = []
     for r in body:
@@ -132,16 +153,23 @@ def tier_stats_sheet_rows(rows: list[dict[str, Any]]) -> tuple[list[str], list[l
 
 def tier_stats_table_html(rows: list[dict[str, Any]]) -> str:
     """HTML table: Tier1–Tier4 + COUNTA of id, pivot-style blanks, grand total row."""
-    body, grand = tier_stats_display_rows(rows)
+    body, grand, body_tuples = tier_stats_display_rows(rows)
     headers = ["Tier1_Segment", "Tier2_Stream", "Tier3_Cat", "Tier4_Type", "COUNTA of id"]
     th = "".join(f"<th>{_h(c)}</th>" for c in headers)
     trs: list[str] = []
-    for i, r in enumerate(body):
+    for i, (r, tup) in enumerate(zip(body, body_tuples, strict=True)):
         row_cls = "zebra-even" if i % 2 == 1 else "zebra-odd"
+        t1, t2, t3, t4 = tup
+        data_attrs = (
+            f'data-tier1="{_h(t1)}" data-tier2="{_h(t2)}" '
+            f'data-tier3="{_h(t3)}" data-tier4="{_h(t4)}" data-granular=""'
+        )
         trs.append(
-            "<tr class='"
+            "<tr class='tier-stats-row--selectable "
             + row_cls
-            + "'>"
+            + "' "
+            + data_attrs
+            + ' tabindex="0" role="button" aria-label="Filter preview to this category">'
             + "".join(f"<td class='{_cell_class(j)}'>{_h(x)}</td>" for j, x in enumerate(r))
             + "</tr>"
         )

@@ -1,9 +1,11 @@
 from cs_tickets.portal_stats import (
+    category_index,
     classify_run_counts,
     classify_run_summary_html,
     is_manual_review_row,
     tier_stats_display_rows,
     tier_stats_sheet_rows,
+    tier_stats_table_html,
 )
 
 
@@ -75,7 +77,7 @@ def test_tier_stats_blanks_and_grand_total() -> None:
         {"Tier1_Segment": "B2C", "Tier2_Stream": "A", "Tier3_Cat": "X", "Tier4_Type": "L1"},
         {"Tier1_Segment": "B2C", "Tier2_Stream": "A", "Tier3_Cat": "Y", "Tier4_Type": "L2"},
     ]
-    body, grand = tier_stats_display_rows(rows)
+    body, grand, _ = tier_stats_display_rows(rows)
     assert grand == 3
     assert len(body) == 2
     assert body[0] == ["B2C", "A", "X", "L1", "2"]
@@ -92,3 +94,54 @@ def test_tier_stats_sheet_rows_grand_total() -> None:
     assert header[4] == "COUNTA of id"
     assert data[-1] == ["Grand Total", "", "", "", 2]
     assert data[0][4] == 2
+
+
+def test_category_index_counts_and_sort() -> None:
+    rows = [
+        {
+            "Tier1_Segment": "B2C",
+            "Tier2_Stream": "A",
+            "Tier3_Cat": "X",
+            "Tier4_Type": "Low",
+            "Granular_Tech_UI_Type": "N/A",
+        },
+        {
+            "Tier1_Segment": "B2B",
+            "Tier2_Stream": "B",
+            "Tier3_Cat": "Y",
+            "Tier4_Type": "High",
+            "Granular_Tech_UI_Type": "N/A",
+        },
+        {
+            "Tier1_Segment": "B2C",
+            "Tier2_Stream": "A",
+            "Tier3_Cat": "X",
+            "Tier4_Type": "Low",
+            "Granular_Tech_UI_Type": "N/A",
+        },
+        {
+            "Tier1_Segment": "B2C",
+            "Tier2_Stream": "A",
+            "Tier3_Cat": "Z",
+            "Tier4_Type": "Low",
+            "Granular_Tech_UI_Type": "N/A",
+        },
+    ]
+    index = category_index(rows)
+    assert len(index) == 3
+    assert index[0]["tier4"] == "Low"
+    assert index[0]["count"] == 2
+    assert index[1]["tier4"] == "High"
+    assert index[1]["count"] == 1
+    assert index[2]["tier4"] == "Low"
+    assert index[2]["count"] == 1
+
+
+def test_tier_stats_table_has_selectable_rows() -> None:
+    rows = [
+        {"Tier1_Segment": "B2C", "Tier2_Stream": "A", "Tier3_Cat": "X", "Tier4_Type": "L1"},
+    ]
+    html = tier_stats_table_html(rows)
+    assert "tier-stats-row--selectable" in html
+    assert 'data-tier4="L1"' in html
+    assert 'data-tier1="B2C"' in html
