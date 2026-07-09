@@ -20,6 +20,48 @@ NAV_REFERENCE_CATEGORIES = TRAINING_LINK_LABEL
 NAV_TBC_TRENDS = "Manual Review Trends"
 NAV_RUN_HISTORY = "Run History"
 
+NAV_RULES = "Routing Rules"
+RULES_PAGE_TITLE = "Routing Rules"
+RULES_PAGE_INTRO = (
+    "Describe routing rules in plain language. The system compiles them into "
+    "classifier rules you can preview and confirm — nothing goes live until you confirm."
+)
+RULES_NEW_BUTTON = "Add rule"
+RULES_CONFIRM_BUTTON = "Confirm live"
+RULES_CONFIRM_LEAD_NOTE = (
+    "Only team leads can confirm rules to live config. "
+    "You can still compile and preview; ask a lead to confirm."
+)
+TBC_QUEUE_BUTTON = "Review manual review queue"
+TBC_QUEUE_PAGE_TITLE = "Manual review queue"
+
+CATEGORY_AUDIT_BUTTON = "Category audit"
+CATEGORY_AUDIT_PAGE_TITLE = "Category audit"
+CATEGORY_AUDIT_PAGE_INTRO = (
+    "Review tickets already classified into a category bucket. "
+    "Use filters or natural language to focus on a segment (e.g. B2C cancellation) "
+    "and read full ticket content."
+)
+CATEGORY_AUDIT_RESULTS_LINK = "← Run results"
+CATEGORY_AUDIT_PREVIEW_LINK = "Ticket preview"
+CATEGORY_AUDIT_SLICE_EMPTY = "No tickets match the current audit filters."
+CATEGORY_AUDIT_INCLUDE_TBC_LABEL = "Include manual review (TBC)"
+CATEGORY_AUDIT_TIER_LINK = "Audit"
+CATEGORY_AUDIT_OPEN_SLICE = "Open audit view for this category"
+CATEGORY_AUDIT_SWEEPS_HEADING = "Slice checks"
+CATEGORY_AUDIT_SWEEPS_META = (
+    "General hygiene checks on the current filter slice."
+)
+CATEGORY_AUDIT_TICKETS_HEADING = "Tickets in slice"
+CATEGORY_AUDIT_CHUNK_META = "Showing {start}–{end} of {total}"
+CATEGORY_AUDIT_CHUNK_PREV = "Previous"
+CATEGORY_AUDIT_CHUNK_NEXT = "Next"
+CATEGORY_AUDIT_RECLASSIFY_BANNER = (
+    'After re-classify: <strong>{slice_label}</strong> slice {slice_before} → {slice_after} tickets '
+    "(manual review {tbc_before} → {tbc_after})."
+)
+CATEGORY_AUDIT_RULE_LEAD_NOTE = "Only team leads can confirm rules to live config."
+
 REFERENCE_CATEGORIES_PAGE_TITLE = TRAINING_LINK_LABEL
 REFERENCE_CATEGORIES_PAGE_INTRO = (
     "Upload the team's categorized Excel workbook "

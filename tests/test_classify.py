@@ -782,3 +782,169 @@ def test_pdf_download_issue_classifies_access_bug(repo_root: Path) -> None:
         "Access Loop or App Bug",
         "N/A",
     )
+
+
+def test_refund_and_cancel_prefers_refund_request(repo_root: Path) -> None:
+    """Christine session #170151 — refund takes precedence over cancellation."""
+    tax = repo_root / "doc" / "Taxonomy.csv"
+    xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
+    if not tax.is_file() or not xlsx.is_file():
+        pytest.skip("doc artifacts missing")
+    allow = load_allowlist(tax, xlsx)
+    row = {
+        "tags": '["subscription_-_refund","digital"]',
+        "subject": "Subscription Refund Inquiry",
+        "raw_subject": "Subscription Refund Inquiry",
+        "description": (
+            "As I no longer need access to the service, I would like to request "
+            "a cancellation of the renewed subscription and a refund of the recent charge."
+        ),
+        "url": "https://scmpsupport.zendesk.com/api/v2/tickets/170151.json",
+    }
+    assert classify_row(row, allow) == (
+        "B2C",
+        "Complaint",
+        "Refund",
+        "Refund Request",
+        "N/A",
+    )
+
+
+def test_posties_mention_remaps_to_b2b_segment(repo_root: Path) -> None:
+    """Christine session — Posties / Young Post → B2B."""
+    tax = repo_root / "doc" / "Taxonomy.csv"
+    xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
+    if not tax.is_file() or not xlsx.is_file():
+        pytest.skip("doc artifacts missing")
+    allow = load_allowlist(tax, xlsx)
+    row = {
+        "tags": '["digital"]',
+        "subject": "Missing Subscription",
+        "raw_subject": "Missing Subscription",
+        "description": (
+            "I have an active subscription to Young Post that is not appearing on my account "
+            "dashboard. I am unable to find the option to cancel the autorenewal."
+        ),
+        "url": "https://scmpsupport.zendesk.com/api/v2/tickets/170133.json",
+    }
+    tier = classify_row(row, allow)
+    assert tier[0] == "B2B"
+
+
+def test_posties_cancellation_remaps_to_b2b(repo_root: Path) -> None:
+    tax = repo_root / "doc" / "Taxonomy.csv"
+    xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
+    if not tax.is_file() or not xlsx.is_file():
+        pytest.skip("doc artifacts missing")
+    allow = load_allowlist(tax, xlsx)
+    row = {
+        "tags": '["digital"]',
+        "subject": "Posties Digital Standard Cancellation",
+        "raw_subject": "Posties Digital Standard Cancellation",
+        "description": "Please cancel my Posties digital subscription.",
+        "url": "https://scmpsupport.zendesk.com/api/v2/tickets/170092.json",
+    }
+    tier = classify_row(row, allow)
+    assert tier[0] == "B2B"
+
+
+def test_account_deletion_remove_all_information(repo_root: Path) -> None:
+    """Christine session #170013 — account deletion / data removal."""
+    tax = repo_root / "doc" / "Taxonomy.csv"
+    xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
+    if not tax.is_file() or not xlsx.is_file():
+        pytest.skip("doc artifacts missing")
+    allow = load_allowlist(tax, xlsx)
+    row = {
+        "tags": '["digital"]',
+        "subject": "Re: Cancel subscription + Delete account",
+        "raw_subject": "Re: Cancel subscription + Delete account",
+        "description": (
+            "I continue to receive SCMP emails months later. Please remove all of my "
+            "information from your database to ensure I don't receive further emails."
+        ),
+        "url": "https://scmpsupport.zendesk.com/api/v2/tickets/170013.json",
+    }
+    assert classify_row(row, allow) == (
+        "B2C",
+        "Service Task",
+        "Account Management",
+        "Request to delete account",
+        "N/A",
+    )
+
+
+def test_chinese_invoice_demand_classifies_invoices(repo_root: Path) -> None:
+    """Christine session #170032 — invoice demand, not cancellation."""
+    tax = repo_root / "doc" / "Taxonomy.csv"
+    xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
+    if not tax.is_file() or not xlsx.is_file():
+        pytest.skip("doc artifacts missing")
+    allow = load_allowlist(tax, xlsx)
+    row = {
+        "tags": '["digital"]',
+        "subject": "Fwd: Subscription Payment Confirmation",
+        "raw_subject": "Fwd: Subscription Payment Confirmation",
+        "description": "我不是要问如何订阅，我是要你们给我这个96美元的发票。发票，懂吗？invoice，invoice，invoice",
+        "url": "https://scmpsupport.zendesk.com/api/v2/tickets/170032.json",
+    }
+    assert classify_row(row, allow) == (
+        "B2C",
+        "Service Task",
+        "Billing & Admin",
+        "Invoices and PO request",
+        "N/A",
+    )
+
+
+def test_rosetta_alipayhk_auto_debit_is_system_report_not_cancellation(repo_root: Path) -> None:
+    """Christine session #169856 — Rosetta system email is not a cancellation request."""
+    tax = repo_root / "doc" / "Taxonomy.csv"
+    xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
+    if not tax.is_file() or not xlsx.is_file():
+        pytest.skip("doc artifacts missing")
+    allow = load_allowlist(tax, xlsx)
+    row = {
+        "tags": '["subscription_-_cancellation"]',
+        "subject": "AlipayHK Subscriber Auto Debit Cancellation: user@example.com",
+        "raw_subject": "AlipayHK Subscriber Auto Debit Cancellation: user@example.com",
+        "description": (
+            "A subscriber has disabled the auto debit of a subscription. "
+            "Thanks. Rosetta System Email"
+        ),
+        "url": "https://scmpsupport.zendesk.com/api/v2/tickets/169856.json",
+    }
+    assert classify_row(row, allow) == (
+        "B2C",
+        "Service Task",
+        "Billing & Admin",
+        "System Report",
+        "N/A",
+    )
+
+
+def test_gdpr_account_deletion_request(repo_root: Path) -> None:
+    """Christine session #170209 — formal account deletion / GDPR."""
+    tax = repo_root / "doc" / "Taxonomy.csv"
+    xlsx = repo_root / "doc" / "CS_ticket_new_categorizations.xlsx"
+    if not tax.is_file() or not xlsx.is_file():
+        pytest.skip("doc artifacts missing")
+    allow = load_allowlist(tax, xlsx)
+    row = {
+        "tags": '["digital"]',
+        "subject": "Request for Account Deletion and Personal Data Erasure",
+        "raw_subject": "Request for Account Deletion and Personal Data Erasure",
+        "description": (
+            "I am writing to formally request the deletion of my SCMP account and all "
+            "personal data associated with it, in accordance with applicable data "
+            "protection laws (including the GDPR, where relevant)."
+        ),
+        "url": "https://scmpsupport.zendesk.com/api/v2/tickets/170209.json",
+    }
+    assert classify_row(row, allow) == (
+        "B2C",
+        "Service Task",
+        "Account Management",
+        "Request to delete account",
+        "N/A",
+    )

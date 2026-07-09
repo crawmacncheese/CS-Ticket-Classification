@@ -4,6 +4,7 @@ import csv
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
+from difflib import get_close_matches
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -24,6 +25,123 @@ class AllowList:
 
     def __contains__(self, item: object) -> bool:
         return item in self.tuples
+
+
+@dataclass(frozen=True)
+class AllowlistRejectionInfo:
+    """Why a suggested 5-tuple was rejected from the allow-list."""
+
+    cause: str  # hallucinated | typo_close_match | taxonomy_not_allowlisted
+    message: str
+    rejected_tier: tuple[str, str, str, str, str] | None
+    close_match_tier: tuple[str, str, str, str, str] | None
+    can_add_to_allowlist: bool
+    novelty_type: str | None = None
+
+    @property
+    def close_match_path(self) -> str:
+        if not self.close_match_tier:
+            return ""
+        return " → ".join(self.close_match_tier[:4])
+
+    @property
+    def rejected_path(self) -> str:
+        if not self.rejected_tier:
+            return ""
+        return " → ".join(self.rejected_tier[:4])
+
+
+def load_taxonomy_four_tuples(taxonomy_csv: Path | None) -> frozenset[tuple[str, str, str, str]]:
+    if not taxonomy_csv or not taxonomy_csv.is_file():
+        return frozenset()
+    return frozenset(five[:4] for five, _ in iter_taxonomy_pivot_rows(taxonomy_csv))
+
+
+def _tier_path_display(tier: tuple[str, str, str, str, str]) -> str:
+    return " → ".join(tier[:4])
+
+
+def _find_close_allowlist_match(
+    candidate: tuple[str, str, str, str, str],
+    allow: AllowList,
+) -> tuple[str, str, str, str, str] | None:
+    """Near-miss allow-list tuple (typo / wrong granular), not a taxonomy gap."""
+    t1, t2, t3, t4, _granular = candidate
+    same4 = [t for t in allow.tuples if t[:4] == candidate[:4]]
+    if same4:
+        return sorted(same4)[0]
+
+    same3 = [t for t in allow.tuples if t[:3] == (t1, t2, t3)]
+    if not same3:
+        return None
+    t4_options = sorted({t[3] for t in same3})
+    if t4 in t4_options:
+        return None
+    close = get_close_matches(t4, t4_options, n=1, cutoff=0.8)
+    if not close:
+        return None
+    return next(t for t in same3 if t[3] == close[0])
+
+
+def classify_allowlist_rejection(
+    candidate: tuple[str, str, str, str, str],
+    allow: AllowList,
+    taxonomy_csv: Path | None,
+) -> AllowlistRejectionInfo:
+    """Classify why a model-suggested tier is outside the allow-list."""
+    if candidate in allow.tuples:
+        return AllowlistRejectionInfo(
+            cause="already_allowlisted",
+            message="Category is already in the allow-list.",
+            rejected_tier=candidate,
+            close_match_tier=None,
+            can_add_to_allowlist=False,
+        )
+
+    rejected_path = _tier_path_display(candidate)
+    taxonomy_four = load_taxonomy_four_tuples(taxonomy_csv)
+    novelty = novelty_type_for_tuple(candidate, allow)
+    close = _find_close_allowlist_match(candidate, allow)
+
+    in_taxonomy = candidate[:4] in taxonomy_four
+    can_add = novelty == "granular_new" or (in_taxonomy and novelty != TIER1_NOVELTY)
+
+    if close and novelty != "granular_new":
+        return AllowlistRejectionInfo(
+            cause="typo_close_match",
+            message=(
+                f"Close allow-list match: {_tier_path_display(close)} "
+                f"(model suggested: {rejected_path})."
+            ),
+            rejected_tier=candidate,
+            close_match_tier=close,
+            can_add_to_allowlist=False,
+            novelty_type=novelty,
+        )
+
+    if can_add:
+        return AllowlistRejectionInfo(
+            cause="taxonomy_not_allowlisted",
+            message=(
+                f"Category is in the taxonomy but not yet in the allow-list "
+                f"(no workbook exemplar): {rejected_path}."
+            ),
+            rejected_tier=candidate,
+            close_match_tier=close,
+            can_add_to_allowlist=True,
+            novelty_type=novelty,
+        )
+
+    return AllowlistRejectionInfo(
+        cause="hallucinated",
+        message=(
+            f"Suggested category is not in the taxonomy or allow-list: {rejected_path}."
+        ),
+        rejected_tier=candidate,
+        close_match_tier=close,
+        can_add_to_allowlist=False,
+        novelty_type=novelty,
+    )
 
 
 def _parse_pivot_taxonomy_csv(path: Path) -> set[tuple[str, str, str, str]]:
@@ -441,6 +559,33 @@ def merge_tuples_into_workbook(
             added += 1
         wb.save(target_xlsx)
         return added
+    finally:
+        wb.close()
+
+
+def append_exemplar_row(
+    target_xlsx: Path,
+    exemplar: dict[str, str],
+    *,
+    sheet: str = "SCMP_Tickets_Master_Categorized",
+) -> int:
+    """Append one classified exemplar row to the reference workbook."""
+    _validate_workbook_sheet(target_xlsx, sheet)
+    wb = load_workbook(target_xlsx, read_only=False, data_only=False)
+    try:
+        if sheet not in wb.sheetnames:
+            raise ValueError(f"Sheet {sheet!r} not in {target_xlsx.name}")
+        ws = wb[sheet]
+        header = [cell.value for cell in ws[1]]
+        idx = _workbook_header_index(tuple(header))
+        missing = [c for c in MASTER_COLUMNS if c not in idx]
+        if missing:
+            raise ValueError(
+                f"Sheet {sheet!r} in {target_xlsx.name} missing columns: {', '.join(missing)}"
+            )
+        ws.append([exemplar.get(col, "") for col in MASTER_COLUMNS])
+        wb.save(target_xlsx)
+        return 1
     finally:
         wb.close()
 

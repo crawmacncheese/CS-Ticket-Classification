@@ -6,7 +6,7 @@ from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 
-from cs_tickets.classifier_rules import RuleSpec, _load_rules_file, load_rule_specs
+from cs_tickets.classifier_rules import RuleSpec, _load_rules_file, load_rule_specs, rule_spec_to_json
 from cs_tickets.drive_live_config import (
     drive_live_config_enabled,
     sync_live_from_drive_if_newer,
@@ -39,34 +39,7 @@ def _seed_path(repo_root: Path, filename: str) -> Path | None:
 
 
 def _write_rules_json(path: Path, rules: tuple[RuleSpec, ...]) -> None:
-    payload: list[dict[str, object]] = []
-    for rule in rules:
-        item: dict[str, object] = {
-            "id": rule.id,
-            "tier": list(rule.tier),
-            "weight": rule.weight,
-        }
-        if rule.all_tags:
-            item["all_tags"] = list(rule.all_tags)
-        if rule.any_tags:
-            item["any_tags"] = list(rule.any_tags)
-        if rule.any_subject:
-            item["any_subject"] = list(rule.any_subject)
-        if rule.any_blob:
-            item["any_blob"] = list(rule.any_blob)
-        if rule.exclude_blob:
-            item["exclude_blob"] = list(rule.exclude_blob)
-        if rule.any_url:
-            item["any_url"] = list(rule.any_url)
-        if rule.requires_b2b_print_context:
-            item["requires_b2b_print_context"] = True
-        if rule.source:
-            item["source"] = rule.source
-        if rule.exemplar_id:
-            item["exemplar_id"] = rule.exemplar_id
-        if rule.tuple_key:
-            item["tuple_key"] = rule.tuple_key
-        payload.append(item)
+    payload = [rule_spec_to_json(rule) for rule in rules]
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
@@ -141,13 +114,21 @@ def _load_rule_specs_cached(rules_path: str, mtime_ns: int) -> tuple[RuleSpec, .
     return _load_rules_file(Path(rules_path))
 
 
-def load_runtime_rule_specs(repo_root: Path) -> tuple[RuleSpec, ...]:
+def load_runtime_rule_specs(
+    repo_root: Path,
+    *,
+    include_disabled: bool = False,
+) -> tuple[RuleSpec, ...]:
     live = ensure_live_bootstrapped(repo_root)
     rules_path = live / RULES_FILE
     if rules_path.is_file():
         stat = rules_path.stat()
-        return _load_rule_specs_cached(str(rules_path.resolve()), stat.st_mtime_ns)
-    return load_rule_specs()
+        loaded = _load_rule_specs_cached(str(rules_path.resolve()), stat.st_mtime_ns)
+    else:
+        loaded = load_rule_specs()
+    if include_disabled:
+        return loaded
+    return tuple(rule for rule in loaded if rule.enabled)
 
 
 def load_runtime_allowlist(repo_root: Path) -> AllowList:

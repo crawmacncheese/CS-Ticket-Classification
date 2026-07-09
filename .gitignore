@@ -55,3 +55,6 @@ doc/*.png
 
 # Logs
 *.log
+
+# Local PDF extracts (analysis scratch; not committed)
+docs/plans/_gemini_pdf_extract.txt

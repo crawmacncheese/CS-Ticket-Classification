@@ -15,6 +15,8 @@ from cs_tickets.rule_coverage import computed_rule_targets, has_rule_target, rul
 from cs_tickets.rule_generator import GeneratedRule, generate_rule_from_exemplar, upsert_training_rules
 from cs_tickets.taxonomy import (
     AllowList,
+    append_exemplar_row,
+    classify_allowlist_rejection,
     count_classified_tickets_per_tuple,
     diff_against_allowlist,
     extract_classified_workbook_five_tuples,
@@ -22,6 +24,7 @@ from cs_tickets.taxonomy import (
     merge_tuples_into_workbook,
     resolve_exemplars_for_tuples,
 )
+from cs_tickets.schema import MASTER_COLUMNS, TIER_COLUMNS
 
 _MAX_SNAPSHOTS = 5
 _TRAINING_SESSIONS: dict[str, _TrainingSession] = {}
@@ -339,3 +342,69 @@ def commit_success_message(result: CommitResult) -> str:
     if result.rules_skipped:
         msg += f" ({result.rules_skipped} skipped — already routable or no example row)."
     return msg
+
+
+def _exemplar_from_ticket_row(
+    ticket_row: dict[str, Any],
+    tier: tuple[str, str, str, str, str],
+) -> dict[str, str]:
+    exemplar = {col: str(ticket_row.get(col) or "") for col in MASTER_COLUMNS}
+    for col, value in zip(TIER_COLUMNS, tier, strict=True):
+        exemplar[col] = value
+    return exemplar
+
+
+def commit_tbc_exemplar(
+    repo_root: Path,
+    tier: tuple[str, str, str, str, str],
+    ticket_row: dict[str, Any],
+) -> CommitResult:
+    """Add one TBC ticket as workbook exemplar for a taxonomy-valid tuple missing from allow-list."""
+    if not training_available(repo_root):
+        raise ValueError("Reference workbook is not writable.")
+    _, wb_path, tax_path = _doc_paths(repo_root)
+    allow = load_allowlist(tax_path, wb_path)
+    if tier in allow.tuples:
+        raise ValueError("Category is already in the allow-list.")
+    rejection = classify_allowlist_rejection(tier, allow, tax_path)
+    if not rejection.can_add_to_allowlist:
+        raise ValueError(rejection.message)
+
+    snapshot_doc_artifacts(repo_root)
+    exemplar = _exemplar_from_ticket_row(ticket_row, tier)
+    rows_added = append_exemplar_row(wb_path, exemplar)
+
+    rules = load_rule_specs()
+    targets = rule_target_tiers(rules)
+    computed = computed_rule_targets()
+    rules_to_upsert: list[GeneratedRule] = []
+    rules_skipped = 0
+    if has_rule_target(tier, json_rules=rules, computed_targets=computed):
+        rules_skipped = 1
+    else:
+        generated = generate_rule_from_exemplar(
+            exemplar,
+            tier,
+            existing_targets=targets,
+            existing_rules=rules,
+        )
+        if generated is None:
+            rules_skipped = 1
+        else:
+            rules_to_upsert.append(generated)
+
+    rules_path = _training_rules_path(repo_root)
+    try:
+        rules_added = upsert_training_rules(rules_path, rules_to_upsert)
+    except Exception:
+        snap_dir = latest_snapshot_dir(repo_root)
+        if snap_dir:
+            revert_snapshot(snap_dir, repo_root)
+        raise
+
+    reload_rule_specs()
+    return CommitResult(
+        rows_added=rows_added,
+        rules_added=rules_added,
+        rules_skipped=rules_skipped,
+    )

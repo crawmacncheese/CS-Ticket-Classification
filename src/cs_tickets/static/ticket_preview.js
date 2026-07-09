@@ -89,6 +89,12 @@ function initTicketPreview(root) {
   const categorySelect = root.querySelector(".ticket-preview-category-filter");
   const subjectInput = root.querySelector(".ticket-preview-subject-filter");
   const tagInput = root.querySelector(".ticket-preview-tag-filter");
+  const containsInput = root.querySelector(".ticket-preview-contains-filter");
+  const segmentSelect = root.querySelector(".ticket-preview-segment-filter");
+  const categoryFocusInput = root.querySelector(".ticket-preview-category-focus-filter");
+  const nlInput = root.querySelector(".ticket-preview-nl-input");
+  const nlApply = root.querySelector(".ticket-preview-nl-apply");
+  const nlStatus = root.querySelector(".ticket-preview-nl-status");
   const categoryMeta = root.querySelector(".ticket-preview-category-meta");
   const tbcMeta = root.querySelector(".ticket-preview-tbc-meta");
   const noMatchEl = root.querySelector(".ticket-preview-no-match");
@@ -101,8 +107,19 @@ function initTicketPreview(root) {
   const tbcInSlice = Number(tbcMeta?.dataset.tbcInSlice || 0);
   const tbcTotal = Number(tbcMeta?.dataset.tbcTotal || payload.tbc_total || 0);
   const runId = root.dataset.runId || "";
+  const auditWrap = root.querySelector(".ticket-preview-audit-wrap");
+  const auditLink = root.querySelector(".ticket-preview-audit-link");
   let selectedRowId = null;
   let explainCache = new Map();
+
+  // Make run context available for rule preview pages opened later.
+  if (runId) {
+    try {
+      sessionStorage.setItem("cs_tickets_last_run_id", runId);
+    } catch (e) {
+      /* ignore */
+    }
+  }
 
   const setExpanded = (expanded) => {
     table.classList.toggle("ticket-preview-table--expanded", expanded);
@@ -244,6 +261,56 @@ function initTicketPreview(root) {
     return String(row.subject || "").toLowerCase().includes(q);
   }
 
+  function rowSearchBlob(row) {
+    const tags = row.tags_list || parseTagsList(row.tags);
+    const tier = Array.isArray(row.tier_path) ? row.tier_path.join(" ") : "";
+    return (
+      String(row.id || "") +
+      " " +
+      String(row.subject || "") +
+      " " +
+      String(row.description || "") +
+      " " +
+      String(tags.join(" ")) +
+      " " +
+      tier
+    ).toLowerCase();
+  }
+
+  function matchesContains(row) {
+    const q = (containsInput?.value || "").trim().toLowerCase();
+    if (!q) return true;
+    if (q.includes("|")) {
+      const tokens = q
+        .split("|")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!tokens.length) return true;
+      const blob = rowSearchBlob(row);
+      return tokens.some((t) => blob.includes(t));
+    }
+    return rowSearchBlob(row).includes(q);
+  }
+
+  function matchesSegment(row) {
+    const seg = (segmentSelect?.value || "").trim();
+    if (!seg) return true;
+    const t1 = Array.isArray(row.tier_path) ? String(row.tier_path[0] || "") : "";
+    return t1 === seg;
+  }
+
+  function matchesCategoryFocus(row) {
+    const raw = (categoryFocusInput?.value || "").trim().toLowerCase();
+    if (!raw) return true;
+    const parts = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!parts.length) return true;
+    const tier = Array.isArray(row.tier_path) ? row.tier_path.slice(0, 4).join(" → ").toLowerCase() : "";
+    return parts.some((p) => tier.includes(p));
+  }
+
   function matchesTag(row) {
     const q = (tagInput?.value || "").trim().toLowerCase();
     if (!q) return true;
@@ -270,7 +337,14 @@ function initTicketPreview(root) {
     const baseRows = getBaseRows();
     const category = categorySelect?.value || "";
     const filtered = baseRows.filter(
-      (r) => matchesCategory(r) && matchesTbc(r) && matchesSubject(r) && matchesTag(r)
+      (r) =>
+        matchesCategory(r) &&
+        matchesTbc(r) &&
+        matchesSegment(r) &&
+        matchesContains(r) &&
+        matchesCategoryFocus(r) &&
+        matchesSubject(r) &&
+        matchesTag(r)
     );
 
     const tb = tbody();
@@ -338,6 +412,20 @@ function initTicketPreview(root) {
       }
     }
 
+    if (auditWrap && auditLink && runId) {
+      if (category) {
+        auditWrap.hidden = false;
+        const tier1 =
+          (payload.categories || []).find((c) => c.tier4 === category)?.tier_tuple?.[0] || "";
+        const params = new URLSearchParams();
+        params.set("tier4", category);
+        if (tier1) params.set("tier1", tier1);
+        auditLink.href = `/run/${encodeURIComponent(runId)}/category_audit?${params.toString()}`;
+      } else {
+        auditWrap.hidden = true;
+      }
+    }
+
     if (tbcMeta) {
       if (tbcOnly && !category && !hasTextFilter) {
         let tbcVisible = 0;
@@ -376,6 +464,69 @@ function initTicketPreview(root) {
   }
   if (tagInput) {
     tagInput.addEventListener("input", debounce(applyFilters, 200));
+  }
+  if (containsInput) {
+    containsInput.addEventListener("input", debounce(applyFilters, 200));
+  }
+  if (categoryFocusInput) {
+    categoryFocusInput.addEventListener("input", debounce(applyFilters, 200));
+  }
+  if (segmentSelect) {
+    segmentSelect.addEventListener("change", applyFilters);
+  }
+
+  function showNlStatus(message, isError) {
+    if (!nlStatus) return;
+    nlStatus.hidden = !message;
+    nlStatus.textContent = message || "";
+    nlStatus.classList.toggle("tbc-filter-nl-status--error", Boolean(isError));
+  }
+
+  async function applyNlFocus() {
+    const text = String(nlInput?.value || "").trim();
+    if (!text) {
+      showNlStatus("Enter a review focus phrase.", true);
+      return;
+    }
+    if (!runId) {
+      showNlStatus("Run id missing; reload the page.", true);
+      return;
+    }
+    if (nlApply) nlApply.disabled = true;
+    showNlStatus("Parsing focus…", false);
+    try {
+      const resp = await fetch(`/run/${encodeURIComponent(runId)}/run_parse_focus`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await resp.json();
+      if (nlApply) nlApply.disabled = false;
+      if (!data || !data.ok) {
+        showNlStatus((data && data.errors && data.errors[0]) || "Could not parse focus.", true);
+        return;
+      }
+      const f = data.run_filter || data.filter || {};
+      if (containsInput) containsInput.value = f.q || "";
+      if (segmentSelect) segmentSelect.value = f.tier1 || "";
+      if (categoryFocusInput) categoryFocusInput.value = (f.categories || []).join(", ");
+      showNlStatus((data.rationale || "Focus applied.") + (data.source ? ` (${data.source})` : ""), false);
+      applyFilters();
+    } catch (err) {
+      if (nlApply) nlApply.disabled = false;
+      showNlStatus("Failed to parse focus.", true);
+      console.error("ticket_preview: nl focus failed", err);
+    }
+  }
+
+  if (nlApply) nlApply.addEventListener("click", applyNlFocus);
+  if (nlInput) {
+    nlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        applyNlFocus();
+      }
+    });
   }
 
   function reasonLabel(code) {
@@ -416,7 +567,7 @@ function initTicketPreview(root) {
     }
     const explainBtn =
       runId && payload.mode === "classify"
-        ? `<p class="ticket-preview-explain-wrap"><button type="button" class="ticket-preview-explain-btn">Show classification details</button></p><div class="ticket-preview-explain-panel" hidden></div>`
+        ? `<p class="ticket-preview-explain-wrap"><button type="button" class="ticket-preview-explain-btn">Show classification details</button> <a class="btn btn-secondary btn-sm ticket-preview-add-rule" href="/rules/new?run_id=${encodeURIComponent(runId)}&amp;ticket_id=${encodeURIComponent(row.id)}">Add rule from this ticket</a></p><div class="ticket-preview-explain-panel" hidden></div>`
         : "";
     return `
       <dl class="ticket-preview-detail-dl">

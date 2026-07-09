@@ -29,6 +29,8 @@ class _RowSignals:
     blob_600: str
     blob_1200: str
     url: str
+    requester_email: str
+    requester_domain: str
     is_reply: bool = False
 
 
@@ -85,6 +87,10 @@ def _signals(row: dict[str, Any]) -> _RowSignals:
         or subject.startswith("fw:")
         or " re:" in subject[:30]
     )
+    requester_email = _text_lower(row.get("requester_email"))
+    requester_domain = ""
+    if "@" in requester_email:
+        requester_domain = requester_email.rsplit("@", 1)[-1]
     return _RowSignals(
         tags_joined=tags_joined,
         subject=subject,
@@ -95,6 +101,8 @@ def _signals(row: dict[str, Any]) -> _RowSignals:
         blob_600=blob[:600],
         blob_1200=blob[:1200],
         url=_text_lower(row.get("url")),
+        requester_email=requester_email,
+        requester_domain=requester_domain,
         is_reply=is_reply,
     )
 
@@ -181,6 +189,46 @@ def _apply_esp_b2b_segment(
     return _remap_tier_b2c_to_b2b_sibling(tier, allow)
 
 
+def _is_posties_young_post_context(sig: _RowSignals) -> bool:
+    return _word_hit(sig.blob_1200, ("posties", "young post"))
+
+
+def _apply_posties_b2b_segment(
+    sig: _RowSignals,
+    tier: tuple[str, str, str, str, str],
+    allow: AllowList,
+) -> tuple[str, str, str, str, str]:
+    if not _is_posties_young_post_context(sig):
+        return tier
+    return _remap_tier_b2c_to_b2b_sibling(tier, allow)
+
+
+def _apply_b2b_segment_remaps(
+    sig: _RowSignals,
+    tier: tuple[str, str, str, str, str],
+    allow: AllowList,
+) -> tuple[str, str, str, str, str]:
+    tier = _apply_esp_b2b_segment(sig, tier, allow)
+    return _apply_posties_b2b_segment(sig, tier, allow)
+
+
+def _is_account_deletion_intent(sig: _RowSignals) -> bool:
+    return _word_hit(
+        sig.blob_600,
+        (
+            "remove all of my information",
+            "remove all my information",
+            "remove all of my information from your database",
+            "account deletion",
+            "personal data erasure",
+            "deletion of my scmp account",
+            "delete my account",
+            "delete account",
+            "close my account",
+        ),
+    )
+
+
 def _is_non_renewal_intent(sig: _RowSignals) -> bool:
     return _word_hit(
         sig.blob_600,
@@ -215,9 +263,53 @@ def _rule_matches(rule: RuleSpec, sig: _RowSignals) -> bool:
         return False
     if rule.exclude_blob and _contains_any(sig.blob_1200, rule.exclude_blob):
         return False
+    if rule.id.startswith("complaint.cancel") and (
+        _is_rosetta_system_email(sig) or _is_account_deletion_intent(sig)
+    ):
+        return False
     if rule.any_url and not _contains_any(sig.url, rule.any_url):
         return False
+    if rule.any_requester and sig.requester_email not in rule.any_requester:
+        return False
+    if rule.any_requester_domain and sig.requester_domain not in rule.any_requester_domain:
+        return False
     return True
+
+
+def _enabled_rules(rule_specs: tuple[RuleSpec, ...]) -> tuple[RuleSpec, ...]:
+    return tuple(rule for rule in rule_specs if rule.enabled)
+
+
+def _try_override_decision(
+    sig: _RowSignals,
+    allow: AllowList,
+    rule_specs: tuple[RuleSpec, ...],
+) -> ClassificationDecision | None:
+    """Return a tier when exactly one override rule matches; tie-break by rule id."""
+    matches: list[RuleSpec] = []
+    for rule in rule_specs:
+        if not rule.override or not rule.enabled:
+            continue
+        if not _rule_matches(rule, sig):
+            continue
+        if rule.tier not in allow:
+            continue
+        matches.append(rule)
+    if not matches:
+        return None
+    winner = sorted(matches, key=lambda r: r.id)[0]
+    tier = _apply_b2b_segment_remaps(sig, winner.tier, allow)
+    evidence = tuple(
+        RuleEvidence(rule_id=rule.id, tier=rule.tier, weight=rule.weight, signal="data_rule")
+        for rule in sorted(matches, key=lambda r: r.id)
+    )
+    return ClassificationDecision(
+        tier=tier,
+        score=winner.weight,
+        fallback_used=False,
+        candidates=((tier, winner.weight),),
+        evidence=evidence,
+    )
 
 
 def tbc_reason(decision: ClassificationDecision) -> str:
@@ -245,6 +337,7 @@ def _score_tiers(
     *,
     rule_specs: tuple[RuleSpec, ...] | None = None,
 ) -> tuple[dict[tuple[str, str, str, str, str], float], list[RuleEvidence]]:
+    rule_specs = _enabled_rules(rule_specs or load_rule_specs())
     scores: dict[tuple[str, str, str, str, str], float] = {}
     evidence: list[RuleEvidence] = []
 
@@ -269,12 +362,23 @@ def _score_tiers(
 
     cancel_tuple = ("B2C", "Complaint", "Refund", "Cancellation Request", "N/A")
 
+    # --- Account deletion (beats cancel/refund keyword traps in subject) ---
+    if _is_account_deletion_intent(sig):
+        add(
+            ("B2C", "Service Task", "Account Management", "Request to delete account", "N/A"),
+            18.0,
+            rule_id="computed:account_deletion.b2c",
+            signal="computed",
+        )
+
     # --- Non-renewal / discontinue (before renewal rules; beats renewal-inquiry ties) ---
     if _is_non_renewal_intent(sig):
         add(cancel_tuple, 14.0, rule_id="computed:non_renewal_cancel.b2c", signal="computed")
 
-    specs = rule_specs if rule_specs is not None else load_rule_specs()
+    specs = rule_specs
     for rule in specs:
+        if rule.override:
+            continue
         if _rule_matches(rule, sig):
             add(rule.tier, rule.weight, rule_id=rule.id, signal="data_rule")
 
@@ -371,21 +475,28 @@ def _score_tiers(
     if "junk" in sig.tags_joined:
         add(("B2C", "Junk", "Junk", "Junk", "N/A"), 13.0)
 
-    # --- Refund / cancel (B2C default; stronger B2B when print context) ---
+    # --- Refund / cancel (refund request beats cancellation when both present) ---
     has_refund = any(
         x in sig.tags_joined for x in ("refund", "subscription_-_refund")
     ) or "refund" in sig.blob_400
     if has_refund:
-        if "cancel" in sig.blob_500:
+        if "cancel" in sig.blob_500 and not _is_rosetta_system_email(sig):
             if _b2b_print_context(sig):
                 add(("B2B", "Complaint", "Refund", "Cancellation Request", "N/A"), 24.0)
-            add(cancel_tuple, 22.0, rule_id="computed:refund_cancel.b2c", signal="computed")
+            add(
+                ("B2C", "Complaint", "Refund", "Refund Request", "N/A"),
+                24.0,
+                rule_id="computed:refund_cancel.b2c",
+                signal="computed",
+            )
         else:
             add(("B2C", "Complaint", "Refund", "Refund Request", "N/A"), 12.0)
 
     # --- Cancel language without refund tag (skip AlipayHK system notices) ---
     if (
         not has_refund
+        and not _is_rosetta_system_email(sig)
+        and not _is_account_deletion_intent(sig)
         and not _is_alipayhk_auto_debit_notice(sig)
         and not _is_non_renewal_intent(sig)
         and _word_hit(
@@ -406,6 +517,7 @@ def _score_tiers(
     # --- Invoices / PO ---
     if (
         "invoice" in sig.blob_600
+        or "发票" in sig.blob_600
         or "invoice" in sig.tags_joined
         or "po_number" in sig.tags_joined
     ):
@@ -612,13 +724,17 @@ def classify_row_with_explanation(
 ) -> ClassificationDecision:
     """Weighted tier assignment with rule evidence and candidate scores."""
     sig = _signals(row)
-    scores, evidence = _score_tiers(sig, allow, rule_specs=rule_specs)
+    specs = _enabled_rules(rule_specs or load_rule_specs())
+    override_decision = _try_override_decision(sig, allow, specs)
+    if override_decision is not None:
+        return override_decision
+    scores, evidence = _score_tiers(sig, allow, rule_specs=specs)
     best, best_s = _pick_best(scores)
     candidates = tuple(
         sorted(scores.items(), key=lambda item: item[1], reverse=True)
     )
     if best is not None and _accepted_score(candidates):
-        tier = _apply_esp_b2b_segment(sig, best, allow)
+        tier = _apply_b2b_segment_remaps(sig, best, allow)
         return ClassificationDecision(
             tier=tier,
             score=best_s,
@@ -636,7 +752,7 @@ def classify_row_with_explanation(
         tier = DEFAULT_TBC
     else:
         tier = next(iter(sorted(allow.tuples)))
-    tier = _apply_esp_b2b_segment(sig, tier, allow)
+    tier = _apply_b2b_segment_remaps(sig, tier, allow)
     return ClassificationDecision(
         tier=tier,
         score=best_s,

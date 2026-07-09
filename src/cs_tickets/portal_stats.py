@@ -6,7 +6,9 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from cs_tickets.category_audit_filters import CategoryAuditFilter, category_audit_url
 from cs_tickets.portal_copy import (
+    CATEGORY_AUDIT_TIER_LINK,
     TBC_REASON_DISPLAY_BUCKETS,
     TBC_REASON_LABELS,
     TBC_REASON_SUMMARY_HEADING,
@@ -151,10 +153,12 @@ def tier_stats_sheet_rows(rows: list[dict[str, Any]]) -> tuple[list[str], list[l
     return header, data
 
 
-def tier_stats_table_html(rows: list[dict[str, Any]]) -> str:
+def tier_stats_table_html(rows: list[dict[str, Any]], *, run_id: str | None = None) -> str:
     """HTML table: Tier1–Tier4 + COUNTA of id, pivot-style blanks, grand total row."""
     body, grand, body_tuples = tier_stats_display_rows(rows)
     headers = ["Tier1_Segment", "Tier2_Stream", "Tier3_Cat", "Tier4_Type", "COUNTA of id"]
+    if run_id:
+        headers.append("")
     th = "".join(f"<th>{_h(c)}</th>" for c in headers)
     trs: list[str] = []
     for i, (r, tup) in enumerate(zip(body, body_tuples, strict=True)):
@@ -164,19 +168,35 @@ def tier_stats_table_html(rows: list[dict[str, Any]]) -> str:
             f'data-tier1="{_h(t1)}" data-tier2="{_h(t2)}" '
             f'data-tier3="{_h(t3)}" data-tier4="{_h(t4)}" data-granular=""'
         )
+        cells = "".join(f"<td class='{_cell_class(j)}'>{_h(x)}</td>" for j, x in enumerate(r))
+        if run_id and t4:
+            audit_href = category_audit_url(
+                run_id,
+                CategoryAuditFilter(tier1=t1, tier4=t4),
+            )
+            cells += (
+                f'<td class="txt category-audit-cell">'
+                f'<a href="{_h(audit_href)}" class="category-audit-tier-link" '
+                f'onclick="event.stopPropagation()">{_h(CATEGORY_AUDIT_TIER_LINK)}</a></td>'
+            )
+        elif run_id:
+            cells += "<td class='txt category-audit-cell'></td>"
         trs.append(
             "<tr class='tier-stats-row--selectable "
             + row_cls
             + "' "
             + data_attrs
             + ' tabindex="0" role="button" aria-label="Filter preview to this category">'
-            + "".join(f"<td class='{_cell_class(j)}'>{_h(x)}</td>" for j, x in enumerate(r))
+            + cells
             + "</tr>"
         )
-    gt = "".join(
+    gt_cells = [
         f"<td class='{_cell_class(j)} grand'>{_h(x)}</td>"
         for j, x in enumerate(["Grand Total", "", "", "", str(grand)])
-    )
+    ]
+    if run_id:
+        gt_cells.append("<td class='txt grand'></td>")
+    gt = "".join(gt_cells)
     return f"""
 <table class="stats-table" aria-label="Tier counts for this run">
   <thead><tr>{th}</tr></thead>

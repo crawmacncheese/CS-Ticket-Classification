@@ -8,11 +8,12 @@ from cs_tickets.drive_upload import drive_runs_folder_url
 from cs_tickets.portal_copy import (
     NAV_CATEGORIZE,
     NAV_REFERENCE_CATEGORIES,
+    NAV_RULES,
     NAV_RUN_HISTORY,
     NAV_TBC_TRENDS,
 )
 
-NavActive = Literal["categorize", "learn", "dashboard"]
+NavActive = Literal["categorize", "learn", "rules", "dashboard"]
 
 
 def _esc(s: str) -> str:
@@ -52,6 +53,7 @@ def portal_nav(*, active: NavActive | None = None) -> str:
     <nav class="portal-topnav" aria-label="Portal sections">
         {item("/", NAV_CATEGORIZE, "categorize")}
         {item("/learn", NAV_REFERENCE_CATEGORIES, "learn")}
+        {item("/rules", NAV_RULES, "rules")}
         {item("/dashboard", NAV_TBC_TRENDS, "dashboard")}
         <span class="portal-topnav-spacer" aria-hidden="true"></span>
         <a href="{drive_url}" class="btn btn-secondary portal-topnav-link portal-topnav-external" target="_blank" rel="noopener noreferrer">{_esc(NAV_RUN_HISTORY)}</a>

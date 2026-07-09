@@ -175,19 +175,29 @@
   {
     "id": "account.delete_account.b2c",
     "tier": ["B2C", "Service Task", "Account Management", "Request to delete account", "N/A"],
-    "weight": 10.0,
-    "any_blob": ["delete my account", "close my account", "remove my account"]
+    "weight": 12.0,
+    "any_blob": [
+      "delete my account",
+      "close my account",
+      "remove my account",
+      "account deletion",
+      "deletion of my scmp account",
+      "remove all of my information",
+      "remove all my information from your database"
+    ]
   },
   {
     "id": "account.data_erasure.b2c",
     "tier": ["B2C", "Service Task", "Account Management", "Request to delete account", "N/A"],
-    "weight": 10.0,
+    "weight": 12.0,
     "any_tags": ["data_enquiry"],
     "any_blob": [
       "data erasure",
+      "personal data erasure",
       "delete all my personal data",
       "delete account",
-      "remove my personal data"
+      "remove my personal data",
+      "gdpr"
     ]
   },
   {
@@ -280,6 +290,13 @@
       "unable to download",
       "daily email"
     ]
+  },
+  {
+    "id": "billing.invoice_demand.b2c",
+    "tier": ["B2C", "Service Task", "Billing & Admin", "Invoices and PO request", "N/A"],
+    "weight": 14.0,
+    "any_blob": ["发票", "send me the invoice", "give me the invoice", "need an invoice"],
+    "exclude_blob": ["cancel my subscription", "please cancel", "want to cancel"]
   },
   {
     "id": "billing.system_report.payment.b2c",
@@ -426,7 +443,12 @@
     "id": "complaint.cancel_posties.b2c",
     "tier": ["B2C", "Complaint", "Refund", "Cancellation Request", "N/A"],
     "weight": 12.0,
-    "any_blob": ["cancellation of posties", "posties printed"]
+    "any_blob": [
+      "cancellation of posties",
+      "posties printed",
+      "posties digital",
+      "young post"
+    ]
   },
   {
     "id": "complaint.cancel_language.b2c",

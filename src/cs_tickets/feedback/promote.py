@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 
-from cs_tickets.classifier_rules import RuleSpec, _load_rules_file
+from cs_tickets.classifier_rules import RuleSpec, _load_rules_file, rule_has_match_conditions, rule_spec_to_json
 from cs_tickets.feedback.models import RuleProposal, TaxonomyProposal
 from cs_tickets.live_config import (
     CONFIG_VERSION_FILE,
@@ -670,4 +670,269 @@ def confirm_learn_proposals(  # backward-compatible alias (prod tests / older UI
         taxonomy_proposals=taxonomy_proposals,
         accepted_rule_ids=accepted_rule_ids,
         accepted_taxonomy_ids=accepted_taxonomy_ids,
+    )
+
+
+def merge_explicit_rule_json(
+    rules_text: str,
+    rule: RuleSpec,
+    *,
+    replace_id: str | None = None,
+) -> tuple[str, bool]:
+    """Upsert one explicit rule; optionally soft-disable ``replace_id``. Returns (text, was_new)."""
+    data = json.loads(rules_text)
+    if not isinstance(data, list):
+        raise PromoteError("classifier_rules.json must contain a list")
+    now = _utc_now_iso()
+    if replace_id:
+        for item in data:
+            if isinstance(item, dict) and str(item.get("id")) == replace_id:
+                item["enabled"] = False
+                item["disabled_at"] = now
+                item["replaced_by"] = rule.id
+    entry = rule_spec_to_json(rule)
+    if not rule.created_at:
+        entry["created_at"] = now
+    entry.setdefault("source", "explicit_rule")
+    was_new = True
+    for idx, item in enumerate(data):
+        if isinstance(item, dict) and str(item.get("id")) == rule.id:
+            data[idx] = entry
+            was_new = False
+            break
+    else:
+        data.append(entry)
+    return json.dumps(data, indent=2, ensure_ascii=False) + "\n", was_new
+
+
+def confirm_explicit_rule(
+    live_dir: Path,
+    rule: RuleSpec,
+    *,
+    replace_id: str | None = None,
+) -> ConfirmResult:
+    """Promote a chat-authored rule into runs/live/classifier_rules.json."""
+    if not rule_has_match_conditions(rule):
+        raise PromoteError("Rule must have at least one match condition.")
+    tax_path = live_dir / TAXONOMY_FILE
+    wb_path = live_dir / WORKBOOK_FILE
+    allow = load_allowlist(
+        tax_path if tax_path.is_file() else None,
+        wb_path if wb_path.is_file() else None,
+    )
+    if rule.tier not in allow.tuples:
+        raise PromoteError(f"Target tier not in allow-list: {' / '.join(rule.tier[:4])}")
+
+    version_before = read_config_version(live_dir)
+    session_id = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
+    proposal_id = f"explicit-{session_id}"
+    backup_dir = live_dir / "backup" / str(version_before)
+    backup_live_dir(live_dir, backup_dir)
+
+    try:
+        rules_path = live_dir / RULES_FILE
+        rules_text = rules_path.read_text(encoding="utf-8")
+        rules_text, was_new = merge_explicit_rule_json(
+            rules_text,
+            rule,
+            replace_id=replace_id,
+        )
+        rules_path.write_text(rules_text, encoding="utf-8")
+
+        proposals_dir = live_dir.parent / "proposals" / proposal_id
+        proposals_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "proposal_id": proposal_id,
+            "upload_id": session_id,
+            "upload_filename": "explicit_rule",
+            "confirmed_at": _utc_now_iso(),
+            "config_version_before": version_before,
+            "config_version_after": version_before + 1,
+            "accepted_rule_ids": [rule.id],
+            "accepted_taxonomy_ids": [],
+            "rules_added": 1 if was_new else 0,
+            "taxonomy_added": 0,
+            "workbook_rows_added": 0,
+            "rules_fallback_added": 0,
+            "source": "explicit_rule",
+        }
+        (proposals_dir / "manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (proposals_dir / "rules.json").write_text(
+            json.dumps([rule_spec_to_json(rule)], indent=2) + "\n",
+            encoding="utf-8",
+        )
+        write_config_version(
+            live_dir,
+            version=version_before + 1,
+            proposal_id=proposal_id,
+            upload_id=session_id,
+        )
+    except Exception:
+        restore_live_dir(live_dir, backup_dir)
+        raise
+
+    return ConfirmResult(
+        proposal_id=proposal_id,
+        upload_id=session_id,
+        config_version_before=version_before,
+        config_version_after=version_before + 1,
+        rules_added=1 if was_new else 0,
+        taxonomy_added=0,
+        workbook_rows_added=0,
+        rules_fallback_added=0,
+        live_dir=live_dir,
+        proposals_dir=proposals_dir,
+        accepted_rule_ids=(rule.id,),
+        accepted_taxonomy_ids=(),
+    )
+
+
+def confirm_explicit_rules_batch(
+    live_dir: Path,
+    rules: tuple[RuleSpec, ...],
+) -> ConfirmResult:
+    """Promote multiple chat-authored rules in one backup/version bump."""
+    if not rules:
+        raise PromoteError("No rules to confirm.")
+    tax_path = live_dir / TAXONOMY_FILE
+    wb_path = live_dir / WORKBOOK_FILE
+    allow = load_allowlist(
+        tax_path if tax_path.is_file() else None,
+        wb_path if wb_path.is_file() else None,
+    )
+    for rule in rules:
+        if not rule_has_match_conditions(rule):
+            raise PromoteError(f"Rule {rule.id} must have at least one match condition.")
+        if rule.tier not in allow.tuples:
+            raise PromoteError(
+                f"Target tier not in allow-list for {rule.id}: {' / '.join(rule.tier[:4])}"
+            )
+
+    version_before = read_config_version(live_dir)
+    session_id = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
+    proposal_id = f"explicit-batch-{session_id}"
+    backup_dir = live_dir / "backup" / str(version_before)
+    backup_live_dir(live_dir, backup_dir)
+
+    try:
+        rules_path = live_dir / RULES_FILE
+        rules_text = rules_path.read_text(encoding="utf-8")
+        rules_added = 0
+        accepted_ids: list[str] = []
+        serialized: list[dict] = []
+        for rule in rules:
+            rules_text, was_new = merge_explicit_rule_json(rules_text, rule)
+            if was_new:
+                rules_added += 1
+            accepted_ids.append(rule.id)
+            serialized.append(rule_spec_to_json(rule))
+        rules_path.write_text(rules_text, encoding="utf-8")
+
+        proposals_dir = live_dir.parent / "proposals" / proposal_id
+        proposals_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "proposal_id": proposal_id,
+            "upload_id": session_id,
+            "upload_filename": "explicit_rule_batch",
+            "confirmed_at": _utc_now_iso(),
+            "config_version_before": version_before,
+            "config_version_after": version_before + 1,
+            "accepted_rule_ids": accepted_ids,
+            "accepted_taxonomy_ids": [],
+            "rules_added": rules_added,
+            "taxonomy_added": 0,
+            "workbook_rows_added": 0,
+            "rules_fallback_added": 0,
+            "source": "explicit_rule_batch",
+        }
+        (proposals_dir / "manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        (proposals_dir / "rules.json").write_text(
+            json.dumps(serialized, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        write_config_version(
+            live_dir,
+            version=version_before + 1,
+            proposal_id=proposal_id,
+            upload_id=session_id,
+        )
+    except Exception:
+        restore_live_dir(live_dir, backup_dir)
+        raise
+
+    return ConfirmResult(
+        proposal_id=proposal_id,
+        upload_id=session_id,
+        config_version_before=version_before,
+        config_version_after=version_before + 1,
+        rules_added=rules_added,
+        taxonomy_added=0,
+        workbook_rows_added=0,
+        rules_fallback_added=0,
+        live_dir=live_dir,
+        proposals_dir=proposals_dir,
+        accepted_rule_ids=tuple(accepted_ids),
+        accepted_taxonomy_ids=(),
+    )
+
+
+def disable_explicit_rule(live_dir: Path, rule_id: str, *, notes: str = "") -> ConfirmResult:
+    """Soft-disable a live rule by id."""
+    rules_path = live_dir / RULES_FILE
+    if not rules_path.is_file():
+        raise PromoteError("Live rules file missing.")
+    data = json.loads(rules_path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise PromoteError("classifier_rules.json must contain a list")
+    found = False
+    now = _utc_now_iso()
+    for item in data:
+        if isinstance(item, dict) and str(item.get("id")) == rule_id:
+            item["enabled"] = False
+            item["disabled_at"] = now
+            if notes:
+                item["notes"] = notes
+            found = True
+            break
+    if not found:
+        raise PromoteError(f"Rule not found: {rule_id}")
+
+    version_before = read_config_version(live_dir)
+    session_id = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
+    proposal_id = f"disable-{session_id}"
+    backup_dir = live_dir / "backup" / str(version_before)
+    backup_live_dir(live_dir, backup_dir)
+    try:
+        rules_path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        write_config_version(
+            live_dir,
+            version=version_before + 1,
+            proposal_id=proposal_id,
+            upload_id=session_id,
+        )
+    except Exception:
+        restore_live_dir(live_dir, backup_dir)
+        raise
+
+    proposals_dir = live_dir.parent / "proposals" / proposal_id
+    proposals_dir.mkdir(parents=True, exist_ok=True)
+    return ConfirmResult(
+        proposal_id=proposal_id,
+        upload_id=session_id,
+        config_version_before=version_before,
+        config_version_after=version_before + 1,
+        rules_added=0,
+        taxonomy_added=0,
+        workbook_rows_added=0,
+        rules_fallback_added=0,
+        live_dir=live_dir,
+        proposals_dir=proposals_dir,
+        accepted_rule_ids=(rule_id,),
+        accepted_taxonomy_ids=(),
     )

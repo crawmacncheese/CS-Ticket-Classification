@@ -23,7 +23,17 @@ class RuleSpec:
     any_blob: tuple[str, ...] = ()
     exclude_blob: tuple[str, ...] = ()
     any_url: tuple[str, ...] = ()
+    any_requester: tuple[str, ...] = ()
+    any_requester_domain: tuple[str, ...] = ()
     requires_b2b_print_context: bool = False
+    enabled: bool = True
+    override: bool = False
+    display_name: str = ""
+    notes: str = ""
+    created_at: str = ""
+    disabled_at: str = ""
+    replaced_by: str = ""
+    source_message: str = ""
     source: str = ""
     exemplar_id: str = ""
     tuple_key: str = ""
@@ -32,9 +42,13 @@ class RuleSpec:
 def _tuple_strs(value: Any) -> tuple[str, ...]:
     if not value:
         return ()
+    # Be tolerant: compilers (LLM or heuristics) may emit a single string instead of a list.
+    if isinstance(value, str):
+        s = value.strip()
+        return (s.lower(),) if s else ()
     if not isinstance(value, list):
         raise ValueError(f"Expected list, got {type(value).__name__}")
-    return tuple(str(item).lower() for item in value)
+    return tuple(str(item).lower() for item in value if str(item).strip())
 
 
 def _tier(value: Any) -> TierTuple:
@@ -44,6 +58,7 @@ def _tier(value: Any) -> TierTuple:
 
 
 def _rule_from_dict(raw: dict[str, Any]) -> RuleSpec:
+    enabled_raw = raw.get("enabled", True)
     return RuleSpec(
         id=str(raw["id"]),
         tier=_tier(raw["tier"]),
@@ -54,10 +69,83 @@ def _rule_from_dict(raw: dict[str, Any]) -> RuleSpec:
         any_blob=_tuple_strs(raw.get("any_blob")),
         exclude_blob=_tuple_strs(raw.get("exclude_blob")),
         any_url=_tuple_strs(raw.get("any_url")),
+        any_requester=_tuple_strs(raw.get("any_requester")),
+        any_requester_domain=_tuple_strs(raw.get("any_requester_domain")),
         requires_b2b_print_context=bool(raw.get("requires_b2b_print_context", False)),
+        enabled=enabled_raw is not False,
+        override=bool(raw.get("override", False)),
+        display_name=str(raw.get("display_name", "")),
+        notes=str(raw.get("notes", "")),
+        created_at=str(raw.get("created_at", "")),
+        disabled_at=str(raw.get("disabled_at", "")),
+        replaced_by=str(raw.get("replaced_by", "")),
+        source_message=str(raw.get("source_message", "")),
         source=str(raw.get("source", "")),
         exemplar_id=str(raw.get("exemplar_id", "")),
         tuple_key=str(raw.get("tuple_key", "")),
+    )
+
+
+def rule_spec_to_json(spec: RuleSpec) -> dict[str, Any]:
+    """Serialize a RuleSpec for live classifier_rules.json."""
+    item: dict[str, Any] = {
+        "id": spec.id,
+        "tier": list(spec.tier),
+        "weight": spec.weight,
+    }
+    if spec.all_tags:
+        item["all_tags"] = list(spec.all_tags)
+    if spec.any_tags:
+        item["any_tags"] = list(spec.any_tags)
+    if spec.any_subject:
+        item["any_subject"] = list(spec.any_subject)
+    if spec.any_blob:
+        item["any_blob"] = list(spec.any_blob)
+    if spec.exclude_blob:
+        item["exclude_blob"] = list(spec.exclude_blob)
+    if spec.any_url:
+        item["any_url"] = list(spec.any_url)
+    if spec.any_requester:
+        item["any_requester"] = list(spec.any_requester)
+    if spec.any_requester_domain:
+        item["any_requester_domain"] = list(spec.any_requester_domain)
+    if spec.requires_b2b_print_context:
+        item["requires_b2b_print_context"] = True
+    if spec.enabled is False:
+        item["enabled"] = False
+    if spec.override:
+        item["override"] = True
+    if spec.display_name:
+        item["display_name"] = spec.display_name
+    if spec.notes:
+        item["notes"] = spec.notes
+    if spec.created_at:
+        item["created_at"] = spec.created_at
+    if spec.disabled_at:
+        item["disabled_at"] = spec.disabled_at
+    if spec.replaced_by:
+        item["replaced_by"] = spec.replaced_by
+    if spec.source_message:
+        item["source_message"] = spec.source_message
+    if spec.source:
+        item["source"] = spec.source
+    if spec.exemplar_id:
+        item["exemplar_id"] = spec.exemplar_id
+    if spec.tuple_key:
+        item["tuple_key"] = spec.tuple_key
+    return item
+
+
+def rule_has_match_conditions(spec: RuleSpec) -> bool:
+    return bool(
+        spec.any_tags
+        or spec.all_tags
+        or spec.any_subject
+        or spec.any_blob
+        or spec.any_url
+        or spec.any_requester
+        or spec.any_requester_domain
+        or spec.requires_b2b_print_context
     )
 
 

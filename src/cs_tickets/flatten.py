@@ -6,6 +6,19 @@ from typing import Any
 from cs_tickets.schema import BASE_COLUMNS
 
 
+def extract_requester_email(ticket: dict[str, Any]) -> str | None:
+    """Lowercase requester email from Zendesk ticket dict (API or flat export)."""
+    raw = ticket.get("requester_email")
+    if raw:
+        return str(raw).strip().lower()
+    requester = ticket.get("requester")
+    if isinstance(requester, dict):
+        email = requester.get("email")
+        if email:
+            return str(email).strip().lower()
+    return None
+
+
 def _json_compact(value: Any) -> str | None:
     if value is None:
         return None
@@ -43,4 +56,7 @@ def flatten_ticket(ticket: dict[str, Any]) -> dict[str, Any]:
             row[col] = bool(val)
         else:
             row[col] = val
+    email = extract_requester_email(ticket)
+    if email:
+        row["requester_email"] = email
     return row

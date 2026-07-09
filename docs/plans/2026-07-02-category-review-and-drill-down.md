@@ -1,5 +1,7 @@
 # Category Review & Drill-Down — Implementation Plan
 
+> **Status:** Phases **1–2 complete** (2026-07-02). Phase 3 backlog open. See [2026-07-02-category-review-and-drill-down-notes.md](./2026-07-02-category-review-and-drill-down-notes.md).
+>
 > **For implementer:** When you execute this plan, document steps and design decisions in `docs/plans/2026-07-02-category-review-and-drill-down-notes.md`. This plan describes *what* to build; that notes file describes *what you did*.
 
 **Goal:** After a **Categorize tickets** run, analysts can **browse tickets in a chosen category**, **filter by ticket details** (subject, tags, dates, etc.), and **inspect individual tickets** with enough context to spot-check whether a category bucket looks correct — without downloading Excel or re-uploading the export.
@@ -21,13 +23,49 @@
 **Out of scope for this plan** (separate plans):
 
 - LLM / Gemini-assisted re-categorization or batch TBC review
-- Rules / guidance context CRUD and injection into prompts
+- Rules / guidance context CRUD and injection into prompts — **client “type rules like an LLM” ask; see [Amendments §2026-07-03](#amendments-2026-07-03)**
 - Feedback loop for retiring outdated rules
 - Cross-run persistence, saved filter presets, or authentication
+- Storing or diffing against the client’s Gemini master prompt at runtime
+
+---
+
+## Amendments (2026-07-03)
+
+Post-implementation re-review after client context: **explicit rule authoring** ([agent transcript](ff71cee6-d071-4134-9936-7d853200e16c)) and **Gemini master prompt** as business spec (not production classifier).
+
+### What changed in the plan
+
+| Area | Original plan | Amended |
+|------|---------------|---------|
+| **Implementation status** | All phases pending | **Phases 1–2 done**; Phase 3 optional backlog |
+| **Category filter data scope** | Client-side on **200-row preview slice** only; meta explains cap | Category selected → **`category_rows`** embeds **all tickets in that tier4** from full export (same pattern as `tbc_rows`); default “All categories” still capped at 200 |
+| **Category filter meta copy** | Always shows in-slice vs in-run counts | When showing full export: `Showing {visible} of {matched_total} in "{category}" (full export).` |
+| **Open Q4 (preview cap)** | Keep 200; Excel for exhaustive category audit | **Resolved:** category drill-down no longer requires Excel for full-bucket review; Excel still needed for cross-run work and columns outside preview |
+| **Open Q2 (`requester_email`)** | Defer to Phase 1 | **Still deferred in this plan**; **elevated priority** for a follow-on *rule authoring* plan (client wants sender-based rules) |
+| **Open Q3 (explain rules frozen?)** | Current live rules | Unchanged; add UX note: explain on an old run reflects **current** `runs/live/` rules, not rules at classify time |
+| **Phase 3 priority** | Flat optional list | **Reordered** by maintainer value (random sample first) |
+| **Acceptance criteria** | Unchecked | Phases 1–2 marked **complete** in checklist below |
+| **Follow-on work** | Not specified | Audit loop continues in sibling plans: Gemini spec gap rules + explicit rule authoring UI |
+
+### What did not change
+
+- **No LLM in classification hot path** — still out of scope; aligns with [prd.md](../prd.md) and Phase 2 PRD NG-01.
+- **Explain pane shows rule-engine evidence**, not Gemini reasoning.
+- **Re-review ≠ re-categorize** — drill-down is spot-check only.
+
+### Sibling plans (not yet drafted)
+
+| Plan | Purpose |
+|------|---------|
+| `2026-07-03-explicit-rule-authoring.md` | Conversational input → LLM compile → `RuleSpec` → Confirm → `runs/live/` | **Drafted** |
+| `2026-07-03-gemini-spec-gap-checklist.md` | Map client business spec → `RuleSpec` / computed-rule fixes | Not yet drafted |
+
+---
 
 **Related backlog items:**
 
-- [2026-06-24-ticket-preview-tbc-reasons.md](./2026-06-24-ticket-preview-tbc-reasons.md) Phase 3 — “Click bucket in summary → enable TBC filter” — **promoted and generalized** here to any category path, not only TBC reason buckets.
+- [2026-06-24-ticket-preview-tbc-reasons.md](./2026-06-24-ticket-preview-tbc-reasons.md) Phase 3 — “Click bucket in summary → enable TBC filter” — **promoted and generalized** here to any category path, not only TBC reason buckets. **Done** via clickable tier breakdown rows.
 
 ---
 
@@ -37,10 +75,10 @@
 
 | Area | Problem | Impact |
 |------|---------|--------|
-| **Category audit** | Tier breakdown shows counts only; no path from a count → the tickets behind it | Analysts download Excel to inspect a category |
-| **TBC-only filter** | Preview can filter manual review, but not “show me everything in category X” | Cannot spot-check non-TBC buckets in the portal |
+| **Category audit** | Tier breakdown shows counts only; no path from a count → the tickets behind it | ~~Analysts download Excel to inspect a category~~ **Addressed** — drill-down + full `category_rows` |
+| **TBC-only filter** | Preview can filter manual review, but not “show me everything in category X” | ~~Cannot spot-check non-TBC buckets~~ **Addressed** |
 | **Detail search** | No way to narrow by subject keyword, tag, or date within a category | Hard to investigate recurring senders/patterns when requester email is not in `BASE_COLUMNS` |
-| **“Why this category?”** | Detail pane shows tier path + TBC reason; non-TBC tickets lack rule evidence | Maintainer cannot tell if a ticket was a strong match or a marginal win without re-running audit tooling offline |
+| **“Why this category?”** | Detail pane shows tier path + TBC reason; non-TBC tickets lack rule evidence | ~~Offline audit tooling~~ **Addressed** — lazy explain endpoint |
 | **Re-review after rule changes** | No in-portal way to re-check a sample without a full re-upload | Maintainer falls back to CLI / `audit_classifier` for spot checks |
 
 ### What already works (do not break)
@@ -50,7 +88,7 @@
 - `_RunRecord.rows` + `_RunRecord.tbc_reasons` for the full classified export in memory
 - `classify_row_with_explanation()` — deterministic re-classification with evidence and candidate scores
 - Excel download and `MASTER_COLUMNS` workbook contract
-- 200-row preview cap (server-side slice before embed)
+- 200-row preview cap for **default** “All categories” view; category/TBC filters use full-export row sets (`category_rows`, `tbc_rows`)
 
 ### Terminology
 
@@ -67,12 +105,13 @@
 
 | Topic | Decision | Rationale |
 |-------|----------|-----------|
-| Filter scope | **Client-side** on embedded JSON for the capped preview slice; meta line explains cap | Matches existing TBC-only filter; avoids new pagination API in Phase 1 |
+| Filter scope | **Client-side** on embedded JSON. **Default view:** first 200 rows. **Category filter:** full export via `category_rows` (tier4 → all rows). **TBC filter:** full export via `tbc_rows`. Meta line distinguishes cap vs full export. | Matches TBC-only pattern; exhaustive category audit without Excel or pagination API |
+| Category row payload | Embed `category_rows: dict[tier4, rows]` built in one pass over full `tickets` in `ticket_preview_html()` | Same embedding strategy as `tbc_rows`; avoids per-category API |
 | Category match | Default: `Tier4_Type` exact match; advanced: full 5-tuple (`Tier1`…`Granular`) | Tier4 is how analysts speak; full path disambiguates duplicate tier4 labels across segments |
 | Tier breakdown link | Click count row → set category filter + scroll to preview | Obvious entry point; no new page |
 | Detail filters | Subject contains (case-insensitive), tag contains, optional `created_at` date range | Available in `BASE_COLUMNS`; no requester-email filter until flatten adds it |
 | TBC + category | Filters are **AND** composable: category + TBC-only + detail filters | Supports “TBC in Billing” and “non-TBC in Renewal” |
-| Classification “why” | **Lazy** `GET /run/{run_id}/explain/{ticket_id}` re-runs classifier on the stored row | Avoids bloating `_RunRecord`; always reflects current rules if rules file changed mid-session (edge case: document as best-effort) |
+| Classification “why” | **Lazy** `GET /run/{run_id}/explain/{ticket_id}` re-runs classifier on the stored row | Avoids bloating `_RunRecord`; uses **current** `runs/live/` rules (not frozen at run time — document in UI) |
 | Explanation storage | Do **not** add evidence columns to Excel in Phase 1 | Preserves workbook contract |
 | Training preview | Reuse same filter controls on `mode="changed"` where category = `new_tier4` | Secondary surface; Phase 2 |
 | Copy | Labels in `portal_copy.py` | Consistent with portal UX plan |
@@ -88,7 +127,7 @@
 │  Category: [All ▼]  Tier4 quick-pick from run counts          │
 │  Subject contains: [________]  Tag contains: [________]       │
 │  ☐ Show manual review (TBC) only   ☐ Show ticket details      │
-│  Meta: Showing 8 of 42 in “Rate or Renewal…” (first 200 rows) │
+│  Meta: Showing 38 of 42 in “Rate or Renewal…” (full export)     │
 │  ┌ id │ subject │ tier4 ┐                                      │
 │  └ … clickable rows …   ┘                                      │
 │  ┌ Detail pane ─────────────────────────────────────────────┐  │
@@ -100,7 +139,9 @@
 
 ---
 
-## Phase 1 — Category filter + tier-breakdown drill-down
+## Phase 1 — Category filter + tier-breakdown drill-down ✅
+
+**Status:** Complete (2026-07-02). Post-ship: `category_rows` full-export embedding added same day.
 
 ### Task 1.1 — Category index for a run
 
@@ -122,6 +163,7 @@ Use for populating `<select>` options and validating filter keys client-side.
 
 - Add to embedded JSON per row: `tier4`, `tier_tuple` (5 strings), `created_at` (already present), parsed `tags` list
 - Add top-level `categories: category_index(rows)` when `mode="classify"`
+- Add top-level `category_rows: dict[str, list]` — all JSON rows per tier4 from **full** export (not only preview slice)
 - Add `filter_labels` / empty-state copy keys from `portal_copy.py`
 
 New copy constants (examples):
@@ -132,8 +174,11 @@ CATEGORY_FILTER_ALL = "All categories"
 SUBJECT_FILTER_LABEL = "Subject contains"
 TAG_FILTER_LABEL = "Tag contains"
 TICKET_PREVIEW_CATEGORY_FILTER_META = (
-    "Showing {visible} of {matched_in_slice} in “{category}” "
+    'Showing {visible} of {matched_in_slice} in "{category}" '
     "(first {limit} rows of export; {matched_total} total in run)."
+)
+TICKET_PREVIEW_CATEGORY_FILTER_META_FULL = (
+    'Showing {visible} of {matched_total} in "{category}" (full export).'
 )
 TICKET_PREVIEW_NO_MATCH = "No tickets match the current filters in this preview slice."
 ```
@@ -150,7 +195,7 @@ TICKET_PREVIEW_NO_MATCH = "No tickets match the current filters in this preview 
 | TBC only (existing) | AND with category + text filters |
 | Show details (existing) | Unchanged |
 
-Filter order: start from embedded `rows` slice → apply category → TBC → subject → tag → re-render tbody. Preserve row click / detail pane behavior on visible rows.
+Filter order: `getBaseRows()` → category filter uses `category_rows[tier4]` when set, else TBC uses `tbc_rows`, else `rows` slice → apply subject → tag → re-render tbody. Preserve row click / detail pane behavior on visible rows.
 
 ### Task 1.4 — Clickable tier breakdown rows
 
@@ -182,12 +227,14 @@ Meta line must distinguish:
 - `category_index` counts match manual grouping on fixture rows
 - Result HTML includes category `<select>`, subject/tag inputs
 - Tier breakdown rows have `data-tier4` (and full tuple attrs)
-- Embedded JSON includes `categories` array
+- `tests/test_portal_ticket_preview.py` — `category_rows` includes tickets beyond 200-row slice
 - Filter meta placeholders render without error
 
 ---
 
-## Phase 2 — Classification explanation on demand (“why this category?”)
+## Phase 2 — Classification explanation on demand (“why this category?”) ✅
+
+**Status:** Complete (2026-07-02).
 
 ### Task 2.1 — Explain endpoint
 
@@ -226,64 +273,66 @@ Pass `run_id` into preview root: `data-run-id="{run_id}"` on classify results pa
 
 ---
 
-## Phase 3 — Optional polish
+## Phase 3 — Optional polish (backlog)
 
-| Item | Files | Notes |
-|------|-------|-------|
-| Full 5-tuple category match toggle | `ticket_preview.js` | “Match full category path” checkbox when tier4 collisions exist |
-| `created_at` date range filter | `ticket_preview.js` | ISO date compare on row field |
-| Random sample button | `ticket_preview.js` | “Show random 10” from current filtered set — useful for spot-checks |
-| Training / Learn preview | `portal_training.py` | Category filter on `new_tier4` in `mode="changed"` |
-| Keyboard: Enter on breakdown row | `ticket_preview.js` | Accessibility |
-| Deep link `?category=…` on result URL | `portal_app.py` | Shareable audit link within same run session |
+**Re-prioritized 2026-07-03** after client rule-authoring / Gemini spec context. Highest value for maintainers auditing buckets before rule changes.
+
+| Priority | Item | Files | Notes |
+|----------|------|-------|-------|
+| **P0** | Random sample button | `ticket_preview.js` | “Show random 10” from current filtered set — spot-check large buckets vs business spec |
+| **P1** | Full 5-tuple category match toggle | `ticket_preview.js` | When tier4 collisions exist across B2B/B2C (e.g. Posties, ESP paths) |
+| **P2** | Training / Learn preview | `portal_training.py` | Category filter on `new_tier4` in `mode="changed"` |
+| **P3** | `created_at` date range filter | `ticket_preview.js` | ISO date compare on row field |
+| **P3** | Deep link `?category=…` on result URL | `portal_app.py` | Shareable audit link within same run session |
+| **P4** | Keyboard: Enter on breakdown row | `ticket_preview.js` | Accessibility — **partially done** (Enter/Space on tier rows) |
 
 ---
 
 ## Implementation order
 
 ```text
-Phase 1
+Phase 1 ✅
   1.1 category_index helper
-  1.2 Extended JSON payload + copy
+  1.2 Extended JSON payload + copy (+ category_rows post-ship)
   1.3 Filter controls + JS filter pipeline
   1.4 Clickable tier breakdown + scroll-into-view
   1.5 portal_app wiring + meta counts
   1.6 tests
 
-Phase 2
+Phase 2 ✅
   2.1 GET /run/{run_id}/explain/{ticket_id}
   2.2 Detail pane fetch + render
   2.3 tests
 
-Phase 3 (optional)
-  per table above
+Phase 3 (optional, re-prioritized)
+  P0 random sample → P1 full 5-tuple → P2 training preview → P3 date/deep link
 ```
 
 ---
 
 ## Acceptance criteria
 
-### Phase 1
+### Phase 1 ✅
 
-- [ ] Classify results page: category dropdown lists all tier4 (or paths) present in the run with counts
-- [ ] Selecting a category filters the ticket preview table; composes with existing TBC-only filter
-- [ ] Subject and tag filters further narrow results; empty state copy when no matches
-- [ ] Clicking a tier breakdown row selects that category and scrolls to the preview
-- [ ] Meta line states cap + in-slice vs in-run counts clearly
-- [ ] Excel download unchanged
-- [ ] `pytest` passes
+- [x] Classify results page: category dropdown lists all tier4 (or paths) present in the run with counts
+- [x] Selecting a category filters the ticket preview table; composes with existing TBC-only filter
+- [x] Subject and tag filters further narrow results; empty state copy when no matches
+- [x] Clicking a tier breakdown row selects that category and scrolls to the preview
+- [x] Meta line states cap + in-slice vs in-run counts clearly (full-export meta when category selected)
+- [x] Excel download unchanged
+- [x] `pytest` passes
 
-### Phase 2
+### Phase 2 ✅
 
-- [ ] “Show classification details” loads rule evidence and top candidates for the selected ticket
-- [ ] Explanation matches `classify_row_with_explanation` for the same row (no stale cached decision)
-- [ ] Works for non-TBC and TBC tickets
+- [x] “Show classification details” loads rule evidence and top candidates for the selected ticket
+- [x] Explanation matches `classify_row_with_explanation` for the same row (no stale cached decision)
+- [x] Works for non-TBC and TBC tickets
 
-### Non-regression
+### Non-regression ✅
 
-- [ ] Existing TBC reason summary, detail pane, and “Show ticket details” behavior unchanged
-- [ ] Training commit/revert and Learn flows unchanged (until Phase 3 opt-in)
-- [ ] Headline tier breakdown totals still match Excel tier sheet
+- [x] Existing TBC reason summary, detail pane, and “Show ticket details” behavior unchanged
+- [x] Training commit/revert and Learn flows unchanged (until Phase 3 opt-in)
+- [x] Headline tier breakdown totals still match Excel tier sheet
 
 ---
 
@@ -307,14 +356,14 @@ Phase 3 (optional)
 
 ---
 
-## Open questions (resolve in notes file during implementation)
+## Open questions (resolved)
 
-| # | Question | Default if unresolved |
-|---|----------|----------------------|
-| 1 | Filter by tier4 only vs always full 5-tuple? | Tier4 default; full path as Phase 3 toggle |
-| 2 | Include `requester_email` in flatten for sender-based drill-down? | Defer; tag + subject only in Phase 1 |
-| 3 | Should explain endpoint use rules frozen at run time vs current `classifier_rules.json`? | Current rules (simpler); note in UI if re-reviewing after rule deploy |
-| 4 | Raise preview cap above 200 for category audit? | Keep 200; meta directs to Excel for exhaustive review |
+| # | Question | Resolution |
+|---|----------|------------|
+| 1 | Filter by tier4 only vs always full 5-tuple? | **Tier4 default**; full path disambiguation in dropdown labels; **5-tuple toggle → Phase 3 P1** |
+| 2 | Include `requester_email` in flatten for sender-based drill-down? | **Deferred here**; elevated for follow-on **rule authoring** plan (not drill-down) |
+| 3 | Should explain endpoint use rules frozen at run time vs current `classifier_rules.json`? | **Current live rules**; UI should note re-explain on old runs ≠ original classify-time decision |
+| 4 | Raise preview cap above 200 for category audit? | **Resolved via `category_rows`:** full bucket in-portal when category selected; default “All” stays at 200 |
 
 ---
 

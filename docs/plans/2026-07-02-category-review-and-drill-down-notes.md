@@ -1,7 +1,7 @@
 # Category Review & Drill-Down — Implementation Notes
 
 **Date:** 2026-07-02  
-**Plan:** [2026-07-02-category-review-and-drill-down.md](./2026-07-02-category-review-and-drill-down.md)
+**Plan:** [2026-07-02-category-review-and-drill-down.md](./2026-07-02-category-review-and-drill-down.md) (Phases 1–2 complete; plan amended 2026-07-03)
 
 ## Summary
 
