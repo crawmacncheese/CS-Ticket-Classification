@@ -1,0 +1,57 @@
+{
+  "session_id": "sess_rosetta_example",
+  "run_id": null,
+  "run_mode": "CATEGORY_AUDIT",
+  "user_persona": "ANALYST",
+  "taxonomy_version": 1,
+  "profile": {
+    "focus_nl": "review B2C",
+    "audit_filter": {
+      "q": "",
+      "tier1": "B2C",
+      "categories": [],
+      "tier4": "",
+      "include_tbc": false,
+      "active": true
+    },
+    "slice_count": 7,
+    "tbc_count": 0,
+    "sweep_summaries": [
+      {
+        "sweep_id": "rosetta_system_email",
+        "match_count": 1,
+        "sample_ids": ["170002"]
+      }
+    ],
+    "no_op": false,
+    "parse_ok": true,
+    "parse_source": "deterministic",
+    "parse_errors": []
+  },
+  "orchestration_queue": [
+    {
+      "action": "PARSE_FOCUS",
+      "params": {"text": "review B2C", "mode": "category_audit"}
+    },
+    {
+      "action": "EXECUTE_SWEEP",
+      "params": {"sweep_id": "rosetta_system_email", "tier1": "B2C"}
+    },
+    {
+      "action": "COMPILE_RULE_DRAFT",
+      "params": {
+        "rule_prefill": "If it contains \"Thanks. Rosetta System Email\", that is system email - NOT cancellation request. Update: Map those tickets to Billing & Admin > System Report."
+      }
+    },
+    {
+      "action": "PREVIEW_RULE",
+      "params": {}
+    },
+    {
+      "action": "QUEUE_FOR_CONFIRMATION",
+      "params": {"auto_confirm": false}
+    }
+  ],
+  "blockers": ["NEEDS_LEAD_CONFIRM"],
+  "clarify_message": null
+}

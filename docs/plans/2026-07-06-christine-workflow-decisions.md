@@ -126,11 +126,13 @@
 
 ### Phase C — Analyst layer
 
-8. Category slice CSV export from drill-down → **moved to** [2026-07-07-category-audit-workflow.md](./2026-07-07-category-audit-workflow.md) Phase 5
+8. Category slice CSV export from drill-down → **done** in [2026-07-07-category-audit-workflow.md](./2026-07-07-category-audit-workflow.md) Phase 5
 9. Random sample N from category (category-review Phase 3)
 10. Weekly summary template (counts + top complaint types; no LLM v1) → partial coverage in category audit Phase 5 (representative examples)
 
-**Category audit (new):** [2026-07-07-category-audit-workflow.md](./2026-07-07-category-audit-workflow.md) — bulk list, validation sweeps, slice impact + reclassify loop (Christine session parity).
+**Category audit:** [2026-07-07-category-audit-workflow.md](./2026-07-07-category-audit-workflow.md) — **Phases 0–5 done** ([notes](./2026-07-07-category-audit-workflow-notes.md)).
+
+**Christine orchestration skill (new):** [2026-07-13-christine-orchestration-skill.md](./2026-07-13-christine-orchestration-skill.md) — session prefilter, metadata package, skill runner, preview overlap, promote hygiene; optional unified chat UI.
 
 ### Phase D — Rule health
 

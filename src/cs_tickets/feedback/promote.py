@@ -517,9 +517,22 @@ def has_revertable_live_backup(live_dir: Path) -> bool:
     return (live_dir / "backup" / str(current - 1)).is_dir() or bool(list_live_backup_versions(live_dir))
 
 
-def revert_latest_live_backup(live_dir: Path) -> int:
-    """Restore runs/live/ from the most recent backup and decrement config version."""
+def revert_latest_live_backup(
+    live_dir: Path,
+    *,
+    expected_version: int | None = None,
+) -> int:
+    """Restore runs/live/ from the most recent backup and decrement config version.
+
+    If ``expected_version`` is set, refuse when live config has moved (another
+    promote landed) — Model B version-guarded revert.
+    """
     current = read_config_version(live_dir)
+    if expected_version is not None and int(expected_version) != current:
+        raise PromoteError(
+            f"Config moved: live is version {current}, session expected "
+            f"{expected_version}. Refuse blind revert — another promote may have landed."
+        )
     if current <= 1:
         raise PromoteError("Nothing to revert.")
     backup_version = current - 1

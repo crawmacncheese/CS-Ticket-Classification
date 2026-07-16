@@ -32,14 +32,15 @@ RULES_CONFIRM_LEAD_NOTE = (
     "Only team leads can confirm rules to live config. "
     "You can still compile and preview; ask a lead to confirm."
 )
-TBC_QUEUE_BUTTON = "Review manual review queue"
+TBC_QUEUE_BUTTON = "Start manual review"
 TBC_QUEUE_PAGE_TITLE = "Manual review queue"
 
+REVIEW_CHAT_BUTTON = "Review chat"
 CATEGORY_AUDIT_BUTTON = "Category audit"
 CATEGORY_AUDIT_PAGE_TITLE = "Category audit"
 CATEGORY_AUDIT_PAGE_INTRO = (
     "Review tickets already classified into a category bucket. "
-    "Use filters or natural language to focus on a segment (e.g. B2C cancellation) "
+    "Use filters or Review chat to focus on a segment (e.g. B2C cancellation) "
     "and read full ticket content."
 )
 CATEGORY_AUDIT_RESULTS_LINK = "← Run results"
@@ -94,7 +95,21 @@ LEARN_UNDO_NOTE = (
 
 CATEGORY_BREAKDOWN_HEADING = "Results By Category"
 CATEGORY_BREAKDOWN_META = (
-    "How many tickets landed in each category path (Tier 1–Tier 4) for this run."
+    "How many tickets landed in each category path for this run."
+)
+
+# Analyst-facing column labels for portal HTML tables (exports keep schema names).
+TIER_STATS_HEADER_SEGMENT = "Segment"
+TIER_STATS_HEADER_STREAM = "Stream"
+TIER_STATS_HEADER_GROUP = "Category group"
+TIER_STATS_HEADER_CATEGORY = "Category"
+TIER_STATS_HEADER_COUNT = "Tickets"
+TIER_STATS_TABLE_HEADERS = (
+    TIER_STATS_HEADER_SEGMENT,
+    TIER_STATS_HEADER_STREAM,
+    TIER_STATS_HEADER_GROUP,
+    TIER_STATS_HEADER_CATEGORY,
+    TIER_STATS_HEADER_COUNT,
 )
 TICKET_PREVIEW_HEADING = "Ticket Preview"
 DOWNLOAD_WORKBOOK_LABEL = "Download Excel Workbook"
@@ -136,8 +151,18 @@ TBC_REASON_SUMMARY_HEADING = "Why tickets need manual review"
 
 CATEGORY_FILTER_LABEL = "Category"
 CATEGORY_FILTER_ALL = "All categories"
-SUBJECT_FILTER_LABEL = "Subject contains"
-TAG_FILTER_LABEL = "Tag contains"
+SEARCH_TICKETS_LABEL = "Search tickets"
+SEARCH_TICKETS_PLACEHOLDER = "subject, body, tags"
+SEGMENT_FILTER_LABEL = "Segment"
+TICKET_PREVIEW_ADVANCED_SUMMARY = "More filters"
+CATEGORY_FOCUS_LABEL = "Category keywords"
+CATEGORY_FOCUS_PLACEHOLDER = "comma-separated"
+SUBJECT_FILTER_LABEL = "Subject contains"  # legacy; merged into Search tickets
+TAG_FILTER_LABEL = "Tag contains"  # legacy; merged into Search tickets
+WORKBOOK_SHEETS_HINT = (
+    "Workbook includes sheets <strong>Run metadata</strong>, <strong>Tickets</strong> "
+    "(full rows), and <strong>Tier breakdown</strong> (category counts)."
+)
 TICKET_PREVIEW_CATEGORY_FILTER_META = (
     'Showing {visible} of {matched_in_slice} in "{category}" '
     "(first {limit} rows of export; {matched_total} total in run)."

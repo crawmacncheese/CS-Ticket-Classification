@@ -10,7 +10,42 @@ from typing import Any
 from cs_tickets.rule_compile import CompileError, call_compile_llm_json, compile_llm_configured
 from cs_tickets.taxonomy import AllowList
 
+from cs_tickets.portal_copy import TBC_REASON_DISPLAY_BUCKETS, TBC_REASON_LABELS
 from cs_tickets.tbc_queue_filters import TbcQueueFilter
+
+# Analyst phrasing → portal TBC reason bucket (portal_copy.TBC_REASON_LABELS).
+# Values may be "!code" for exclusions (e.g. "not contested" → "!lost_margin").
+_TBC_REASON_ALIAS_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\b(contested|lost\s*margin|too\s+close)\b", re.IGNORECASE), "lost_margin"),
+    (
+        re.compile(r"\b(weak\s+signal|below\s+threshold|low\s+confidence)\b", re.IGNORECASE),
+        "below_threshold",
+    ),
+    (
+        re.compile(
+            r"\b("
+            r"no\s+rules(?:\s+matched)?|"
+            r"zero\s+rules|"
+            r"zero\s+candidate|"
+            r"without\s+(?:a\s+)?match(?:es)?|"
+            r"no\s+match(?:es)?|"
+            r"unmatched"
+            r")\b",
+            re.IGNORECASE,
+        ),
+        "zero_candidate",
+    ),
+    (
+        re.compile(r"\b(rules?\s+blocked|allow[\s-]?list(?:\s+filtered)?)\b", re.IGNORECASE),
+        "allowlist_filtered",
+    ),
+)
+
+# Prefixing negate words that invert a reason alias ("show not contested").
+_REASON_NEGATION_RE = re.compile(
+    r"\b(?:not|non|except|excluding|without)\s*[- ]*\s*$",
+    re.IGNORECASE,
+)
 
 _SEGMENT_RE = re.compile(r"\b(B2C|B2B)\b", re.IGNORECASE)
 _CONTAINS_RE = re.compile(
@@ -19,6 +54,55 @@ _CONTAINS_RE = re.compile(
 )
 _CONTAINS_LIST_TOKEN = re.compile(r"[a-z0-9@._-]{2,40}", re.IGNORECASE)
 _WORD_RE = re.compile(r"[a-z0-9@._-]+", re.IGNORECASE)
+
+# Words that must not fuzzy-match allow-list labels (e.g. "match" → "Price Mismatch").
+_FUZZY_CATEGORY_STOPWORDS = frozenset(
+    {
+        "about",
+        "anything",
+        "been",
+        "categories",
+        "category",
+        "contains",
+        "containing",
+        "except",
+        "excluding",
+        "focus",
+        "from",
+        "have",
+        "look",
+        "manual",
+        "match",
+        "matched",
+        "matches",
+        "matching",
+        "mentioning",
+        "mentions",
+        "need",
+        "needs",
+        "only",
+        "please",
+        "review",
+        "rule",
+        "rules",
+        "segment",
+        "show",
+        "shows",
+        "something",
+        "that",
+        "these",
+        "this",
+        "those",
+        "ticket",
+        "tickets",
+        "under",
+        "want",
+        "where",
+        "which",
+        "with",
+        "without",
+    }
+)
 
 _CONTAINS_KEYWORD_START_RE = re.compile(
     r"(?:anything\s+)?(?:contains?|containing|with|mentioning|mentions?|from)\s+[\"']?([a-z0-9@._-]{2,40})",
@@ -91,6 +175,49 @@ def _clean_category_token(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip(" .,;"))
 
 
+def resolve_tbc_reason_alias(text: str) -> str:
+    """Map analyst phrases (e.g. contested) to a TBC reason bucket code, else ''.
+
+    Negations return an exclusion code with a leading '!':
+    ``show not contested`` → ``!lost_margin``.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    lowered = raw.lower().replace("-", " ")
+    # Exact code / exclusion code
+    if lowered in TBC_REASON_DISPLAY_BUCKETS:
+        return lowered
+    if lowered.startswith("!") and lowered[1:] in TBC_REASON_DISPLAY_BUCKETS:
+        return lowered
+    # Exact analyst label
+    for code, label in TBC_REASON_LABELS.items():
+        if lowered == label.lower():
+            return code
+        if lowered in (f"not {label.lower()}", f"non {label.lower()}"):
+            return f"!{code}"
+    for pattern, code in _TBC_REASON_ALIAS_PATTERNS:
+        match = pattern.search(raw)
+        if not match:
+            continue
+        before = raw[: match.start()]
+        if _REASON_NEGATION_RE.search(before):
+            return f"!{code}"
+        return code
+    return ""
+
+
+def tbc_reason_filter_label(code: str) -> str:
+    """Human label for include/exclude reason filter codes."""
+    raw = (code or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("!"):
+        inner = raw[1:]
+        return "not " + TBC_REASON_LABELS.get(inner, inner).lower()
+    return TBC_REASON_LABELS.get(raw, raw)
+
+
 def _split_category_phrases(blob: str) -> list[str]:
     blob = blob.strip()
     if not blob:
@@ -112,7 +239,12 @@ def _known_category_tokens(allow: AllowList) -> set[str]:
     return tokens
 
 
-def _match_categories_from_text(text: str, allow: AllowList) -> list[str]:
+def _match_categories_from_text(
+    text: str,
+    allow: AllowList,
+    *,
+    allow_fuzzy: bool = True,
+) -> list[str]:
     lowered = text.lower()
     hits: list[str] = []
     known = _known_category_tokens(allow)
@@ -125,10 +257,17 @@ def _match_categories_from_text(text: str, allow: AllowList) -> list[str]:
     if hits:
         return hits[:6]
 
+    if not allow_fuzzy:
+        return []
+
     # Fallback: allow partial word matches against known labels.
     # This covers common analyst shorthand like "cancellation" matching
     # an allow-list label like "Cancellation Request".
-    words = [w.lower() for w in _WORD_RE.findall(lowered) if len(w) >= 5]
+    words = [
+        w.lower()
+        for w in _WORD_RE.findall(lowered)
+        if len(w) >= 5 and w.lower() not in _FUZZY_CATEGORY_STOPWORDS
+    ]
     if not words:
         return []
     for label in sorted(known, key=len, reverse=True):
@@ -159,6 +298,7 @@ def parse_review_focus_deterministic(text: str, allow: AllowList) -> ReviewFocus
     tier1 = ""
     categories: list[str] = []
     rule_target = ""
+    tbc_reason = resolve_tbc_reason_alias(raw)
 
     seg = _SEGMENT_RE.search(raw)
     if seg:
@@ -213,8 +353,16 @@ def parse_review_focus_deterministic(text: str, allow: AllowList) -> ReviewFocus
     # explicitly enumerate categories (e.g. "1. Cancellation 2. Refund ...").
     # Otherwise we risk adding generic fragments like "Access"/"Loop" that make
     # the slice overly restrictive in the portal.
+    # When a TBC reason alias already matched (e.g. "without match"), skip fuzzy
+    # category matching so words like "match" cannot pull "Price Mismatch".
     if not explicit_categories:
-        categories.extend(_match_categories_from_text(raw, allow))
+        categories.extend(
+            _match_categories_from_text(
+                raw,
+                allow,
+                allow_fuzzy=not bool(tbc_reason),
+            )
+        )
 
     # Dedupe categories preserving order
     seen: set[str] = set()
@@ -226,7 +374,12 @@ def parse_review_focus_deterministic(text: str, allow: AllowList) -> ReviewFocus
             deduped.append(cat)
     categories = deduped
 
-    filt = TbcQueueFilter(q=q, tier1=tier1, categories=tuple(categories))
+    filt = TbcQueueFilter(
+        q=q,
+        tier1=tier1,
+        categories=tuple(categories),
+        tbc_reason=tbc_reason,
+    )
     if not filt.active and not rule_target:
         return ReviewFocusParseResult(
             ok=False,
@@ -234,7 +387,10 @@ def parse_review_focus_deterministic(text: str, allow: AllowList) -> ReviewFocus
             rule_target="",
             rationale="",
             source="deterministic",
-            errors=("Could not parse focus — try keywords like B2C, cancellation, or contains sherina.",),
+            errors=(
+                "Could not parse focus — try keywords like B2C, cancellation, "
+                "contains sherina, or show contested.",
+            ),
         )
 
     parts: list[str] = []
@@ -244,6 +400,8 @@ def parse_review_focus_deterministic(text: str, allow: AllowList) -> ReviewFocus
         parts.append(tier1)
     if categories:
         parts.append("categories: " + ", ".join(categories))
+    if tbc_reason:
+        parts.append("TBC reason: " + tbc_reason_filter_label(tbc_reason))
     rationale = "Parsed focus: " + "; ".join(parts) if parts else f"Rule target: {rule_target}"
 
     return ReviewFocusParseResult(
@@ -255,7 +413,23 @@ def parse_review_focus_deterministic(text: str, allow: AllowList) -> ReviewFocus
     )
 
 
+def _normalize_tbc_reason_code(raw: Any) -> str:
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if text in TBC_REASON_DISPLAY_BUCKETS:
+        return text
+    if text.startswith("!") and text[1:] in TBC_REASON_DISPLAY_BUCKETS:
+        return text
+    return resolve_tbc_reason_alias(text)
+
+
 def _parse_llm_focus_response(raw: dict[str, Any]) -> tuple[TbcQueueFilter, str, str]:
+    # Explicit refuse from model
+    if raw.get("ok") is False:
+        rationale = str(raw.get("rationale") or "Could not extract a review focus.").strip()
+        return TbcQueueFilter(), "", rationale
+
     q = str(raw.get("q") or "").strip()
     tier1 = str(raw.get("tier1") or "").strip().upper()
     if tier1 not in ("B2C", "B2B"):
@@ -266,48 +440,70 @@ def _parse_llm_focus_response(raw: dict[str, Any]) -> tuple[TbcQueueFilter, str,
         categories = [str(c).strip() for c in cats_raw if str(c).strip()]
     elif isinstance(cats_raw, str) and cats_raw.strip():
         categories = _split_category_phrases(cats_raw)
+    # Cap category list — schema validation against runaway inventiveness
+    categories = categories[:6]
     rule_target = str(raw.get("rule_target") or raw.get("target_category") or "").strip()
+    tbc_reason = _normalize_tbc_reason_code(raw.get("tbc_reason") or raw.get("reason"))
+    # Honor negate / not_contested style boolean
+    if raw.get("negate_tbc_reason") and tbc_reason and not tbc_reason.startswith("!"):
+        tbc_reason = f"!{tbc_reason}"
     rationale = str(raw.get("rationale") or "AI-parsed review focus.").strip()
-    return TbcQueueFilter(q=q, tier1=tier1, categories=tuple(categories)), rule_target, rationale
+    return (
+        TbcQueueFilter(
+            q=q,
+            tier1=tier1,
+            categories=tuple(categories),
+            tbc_reason=tbc_reason,
+        ),
+        rule_target,
+        rationale,
+    )
 
 
-def parse_review_focus_nl(
-    text: str,
-    allow: AllowList,
-    *,
-    use_llm: bool = True,
-) -> ReviewFocusParseResult:
-    """Parse natural-language review focus; LLM when configured, else heuristics."""
-    det = parse_review_focus_deterministic(text, allow)
-    if det.ok or not use_llm or not compile_llm_configured():
-        return det
-
+def _llm_parse_focus(text: str, *, det: ReviewFocusParseResult) -> ReviewFocusParseResult:
+    """Call compile LLM for structured focus JSON; always schema-validated."""
+    reason_codes = ", ".join(TBC_REASON_DISPLAY_BUCKETS)
     system = "\n".join(
         [
-            "You parse analyst review focus for a manual-review (TBC) ticket queue.",
-            "Output ONLY JSON:",
-            '{"q": "", "tier1": "B2C|B2B|", "categories": ["..."], '
-            '"rule_target": "optional category path for a routing rule", "rationale": "..."}',
+            "You parse analyst review focus for a classification / TBC review workbench.",
+            "Output ONLY JSON with this shape:",
+            '{"ok": true, "q": "", "tier1": "B2C|B2B|", "categories": ["..."], '
+            '"tbc_reason": "", "negate_tbc_reason": false, '
+            '"rule_target": "", "rationale": "..."}',
             "Rules:",
+            "- ok: false when the text is junk, a question with no filter, or not a review focus.",
             "- q: keyword to search subject/body/tags (e.g. sherina, stripe). Empty if none.",
-            "- tier1: B2C or B2B when segment is mentioned.",
-            "- categories: substring labels to match tier paths (e.g. Print, Cancellation, Access Loop).",
-            "- rule_target: when user wants to MOVE/ROUTE tickets to a category (e.g. under Print).",
-            "- Do NOT invent tier paths outside common CS taxonomy labels.",
+            "- tier1: B2C or B2B when segment is mentioned; else empty.",
+            "- categories: up to 6 substring labels for tier paths "
+            "(e.g. Print, Cancellation, Access Loop). Empty list if none.",
+            f"- tbc_reason: one of [{reason_codes}] for contested/weak signal/no rules/rules blocked. "
+            "Map contested → lost_margin, weak signal → below_threshold, "
+            "no/zero rules → zero_candidate, rules blocked → allowlist_filtered.",
+            "- For 'not contested' / 'excluding contested': set tbc_reason to lost_margin "
+            "AND negate_tbc_reason true (server stores !lost_margin).",
+            "  Alternatively set tbc_reason to '!lost_margin'.",
+            "- rule_target: only when user wants to MOVE/ROUTE tickets to a category.",
+            "- Do NOT invent tier paths. Do NOT draft routing rules. Do NOT set ok=true "
+            "for gibberish or pure chat questions.",
         ]
     )
     user = f"Parse this review focus:\n{text.strip()}"
     try:
         raw = call_compile_llm_json(system, user)
+        if not isinstance(raw, dict):
+            raise ValueError("LLM focus response was not a JSON object")
         filt, rule_target, rationale = _parse_llm_focus_response(raw)
-        if not filt.active and not rule_target:
+        if raw.get("ok") is False or (not filt.active and not rule_target):
             return ReviewFocusParseResult(
                 ok=False,
                 filter=filt,
                 rule_target=rule_target,
                 rationale=rationale,
                 source="llm",
-                errors=("AI could not extract a filter from that focus.",),
+                errors=(
+                    rationale
+                    or "AI could not extract a filter from that focus.",
+                ),
             )
         return ReviewFocusParseResult(
             ok=True,
@@ -316,7 +512,7 @@ def parse_review_focus_nl(
             rationale=rationale,
             source="llm",
         )
-    except (CompileError, json.JSONDecodeError, ValueError, KeyError) as exc:
+    except (CompileError, json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
         return ReviewFocusParseResult(
             ok=False,
             filter=det.filter,
@@ -325,6 +521,40 @@ def parse_review_focus_nl(
             source="llm",
             errors=(str(exc),),
         )
+
+
+def parse_review_focus_nl(
+    text: str,
+    allow: AllowList,
+    *,
+    use_llm: bool = True,
+    prefer_llm: bool = False,
+) -> ReviewFocusParseResult:
+    """Parse natural-language review focus into a validated structured filter.
+
+    ``prefer_llm`` (Review chat): when an LLM is configured, try structured JSON
+    first; fall back to deterministic aliases on LLM failure.
+
+    Default (TBC/audit page NL boxes): deterministic first, LLM only if needed.
+
+    Never invents compile/confirm actions — filter extraction only.
+    """
+    det = parse_review_focus_deterministic(text, allow)
+    if not use_llm or not compile_llm_configured():
+        return det
+
+    if prefer_llm:
+        llm = _llm_parse_focus(text, det=det)
+        if llm.ok:
+            return llm
+        # Prefer deterministic when LLM refused / failed to extract
+        if det.ok:
+            return det
+        return llm
+
+    if det.ok:
+        return det
+    return _llm_parse_focus(text, det=det)
 
 
 def build_filter_batch_rule_prefill(

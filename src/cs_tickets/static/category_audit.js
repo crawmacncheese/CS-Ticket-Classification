@@ -4,9 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const runId = app.dataset.runId || "";
   const sweepsUrl = app.dataset.sweepsUrl || "";
-  const nlInput = document.getElementById("category-audit-filter-nl");
-  const nlApply = document.getElementById("category-audit-filter-nl-apply");
-  const nlStatus = document.getElementById("category-audit-filter-nl-status");
+  const statusEl = document.getElementById("category-audit-status");
   const reclassifyBtn = document.getElementById("category-audit-reclassify-btn");
   const sweepsPanel = document.getElementById("category-audit-sweeps-panel");
 
@@ -38,11 +36,11 @@ document.addEventListener("DOMContentLoaded", () => {
     return qs ? `?${qs}` : "";
   }
 
-  function showNlStatus(message, isError) {
-    if (!nlStatus) return;
-    nlStatus.hidden = false;
-    nlStatus.textContent = message;
-    nlStatus.classList.toggle("tbc-filter-nl-status--error", Boolean(isError));
+  function showStatus(message, isError) {
+    if (!statusEl) return;
+    statusEl.hidden = !message;
+    statusEl.textContent = message || "";
+    statusEl.classList.toggle("tbc-filter-nl-status--error", Boolean(isError));
   }
 
   function escHtml(s) {
@@ -147,59 +145,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  function applyNlFocus() {
-    const text = ((nlInput && nlInput.value) || "").trim();
-    if (!text) {
-      showNlStatus("Enter a review focus phrase.", true);
-      return;
-    }
-    if (nlApply) nlApply.disabled = true;
-    showNlStatus("Parsing focus…", false);
-    fetch(`/run/${encodeURIComponent(runId)}/category_audit_parse_focus`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        include_tbc: app.dataset.filterIncludeTbc === "true",
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (nlApply) nlApply.disabled = false;
-        if (!data.ok) {
-          showNlStatus((data.errors && data.errors[0]) || "Could not parse focus.", true);
-          return;
-        }
-        const parsed = data.audit_filter || data.filter || {};
-        const params = new URLSearchParams();
-        if (parsed.q) params.set("q", parsed.q);
-        if (parsed.tier1) params.set("tier1", parsed.tier1);
-        if (parsed.categories && parsed.categories.length) {
-          params.set("categories", parsed.categories.join(","));
-        }
-        if (parsed.tier4) params.set("tier4", parsed.tier4);
-        if (parsed.include_tbc) params.set("include_tbc", "1");
-        const qs = params.toString();
-        window.location.href = qs
-          ? `/run/${encodeURIComponent(runId)}/category_audit?${qs}`
-          : `/run/${encodeURIComponent(runId)}/category_audit`;
-      })
-      .catch(() => {
-        if (nlApply) nlApply.disabled = false;
-        showNlStatus("Failed to parse focus.", true);
-      });
-  }
-
-  if (nlApply) nlApply.addEventListener("click", applyNlFocus);
-  if (nlInput) {
-    nlInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        applyNlFocus();
-      }
-    });
-  }
-
   if (reclassifyBtn) {
     reclassifyBtn.addEventListener("click", () => {
       reclassifyBtn.disabled = true;
@@ -210,10 +155,30 @@ document.addEventListener("DOMContentLoaded", () => {
         })
         .catch(() => {
           reclassifyBtn.disabled = false;
-          showNlStatus("Re-classify failed.", true);
+          showStatus("Re-classify failed.", true);
         });
     });
   }
+
+  window.addEventListener("cs-tickets:apply-review-focus", (ev) => {
+    const detail = (ev && ev.detail) || {};
+    const f = detail.filter || detail.workbench_filter || {};
+    const cats = Array.isArray(f.categories) ? f.categories : [];
+    // TBC-reason focuses belong on results/TBC queue, not category audit.
+    if (f.tbc_reason && !f.q && !f.tier1 && !cats.length) return;
+    if (!(f.q || f.tier1 || cats.length || f.active)) return;
+    const form = document.getElementById("category-audit-filter-form");
+    if (!form) return;
+    const qEl = form.querySelector('input[name="q"]');
+    const tier1El = form.querySelector('select[name="tier1"]');
+    const catsEl = form.querySelector('input[name="categories"]');
+    if (qEl) qEl.value = f.q || "";
+    if (tier1El) tier1El.value = f.tier1 || "";
+    if (catsEl) catsEl.value = cats.join(", ");
+    if (typeof detail._markApplied === "function") detail._markApplied("audit");
+    if (typeof form.requestSubmit === "function") form.requestSubmit();
+    else form.submit();
+  });
 
   loadSweeps();
   bindExplainButtons();

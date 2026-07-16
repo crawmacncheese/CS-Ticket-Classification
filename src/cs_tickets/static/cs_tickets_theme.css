@@ -951,6 +951,30 @@ body.upload-page {
   flex-wrap: wrap;
   gap: 1rem 1.5rem;
   margin: 0.75rem 0;
+  align-items: flex-end;
+}
+
+.ticket-preview-advanced {
+  flex: 1 1 100%;
+  margin: 0;
+}
+
+.ticket-preview-advanced > summary {
+  cursor: pointer;
+  color: var(--muted-foreground, #64748b);
+  font-size: 0.9rem;
+  list-style-position: outside;
+}
+
+.ticket-preview-advanced-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-top: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius, 8px);
+  background: color-mix(in srgb, var(--muted, #f6f6f6) 55%, transparent);
 }
 
 .ticket-preview-filter select,
@@ -1235,6 +1259,90 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
   background: var(--card);
 }
 
+.rules-active-focus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted, #f5f5f5);
+}
+
+.rules-parse-summary {
+  margin: 0.35rem 0 0;
+  padding: 0.45rem 0.55rem;
+  white-space: pre-wrap;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  border-radius: var(--radius);
+  background: var(--muted, #f5f5f5);
+}
+
+.rules-orch-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rules-orch-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+}
+
+.rules-orch-badge[data-mode="config"] {
+  border-color: var(--accent, var(--border));
+}
+
+.rules-orch-hint {
+  margin: 0;
+}
+
+.rules-chat-card {
+  margin: 0.65rem 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+}
+
+.rules-chat-card-title {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.rules-chat-card-sweep .btn,
+.rules-chat-card .btn {
+  margin-top: 0.35rem;
+}
+
+.rules-chat-card-tbc_handoff .btn {
+  margin-top: 0.35rem;
+}
+
+.rules-exec-log {
+  max-height: 6rem;
+  overflow-y: auto;
+  margin-bottom: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-left: 3px solid var(--border);
+}
+
+.rules-chat-msg {
+  margin-bottom: 0.5rem;
+}
+
 .rules-chat-input {
   width: 100%;
   margin-bottom: 0.5rem;
@@ -1338,27 +1446,6 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--border-color, #ccc);
   border-radius: 4px;
-}
-
-.tbc-filter-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  align-items: center;
-}
-
-.tbc-filter-chip {
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 0.2rem 0.5rem;
-  border: 1px solid var(--border-color, #ccc);
-  border-radius: 999px;
-  background: var(--surface-alt, #f5f5f5);
-  cursor: pointer;
-}
-
-.tbc-filter-chip:hover {
-  background: var(--surface-hover, #ebebeb);
 }
 
 .tbc-queue-chunk-row {
@@ -1587,4 +1674,305 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
   flex-wrap: wrap;
   gap: 0.5rem;
   align-items: center;
+}
+
+/* —— Review chat side dock (Cursor-like) ——
+   Main column shrinks; dock is a reserved side column (never overlays). */
+
+.portal-shell:has(.portal-main--wide),
+.portal-shell:has(.workbench-layout) {
+  max-width: min(1680px, 100%);
+}
+
+.portal-main--wide,
+.portal-main--wide.container {
+  max-width: min(1680px, 100%);
+}
+
+.workbench-layout {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 1rem;
+  width: 100%;
+  min-height: calc(100vh - 10rem);
+  isolation: isolate;
+}
+
+.workbench-layout[data-dock-collapsed="true"] .review-dock {
+  display: none;
+}
+
+.workbench-main {
+  /* Prefer shrinking the list over clipping actions under the chat */
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 17rem);
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.workbench-layout[data-dock-collapsed="true"] .workbench-main {
+  max-width: 100%;
+}
+
+.workbench-main .stats-wrap,
+.workbench-main .preview-wrap,
+.workbench-main .rules-filter-bar,
+.workbench-main .rules-list-scroll {
+  max-width: 100%;
+}
+
+.rules-list-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.rules-list-table {
+  margin: 0;
+  min-width: 640px;
+}
+
+.rules-list-table td.category-path-cell,
+.rules-list-table tbody td:nth-child(3) {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep Edit / Disable visible while Category/Match scroll */
+.rules-list-table th.rules-list-actions-col,
+.rules-list-table td.rules-list-actions-col {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  white-space: nowrap;
+  background: var(--card, #fff);
+  box-shadow: -6px 0 8px -4px rgba(0, 0, 0, 0.12);
+  vertical-align: middle;
+}
+
+.rules-list-table thead th.rules-list-actions-col {
+  z-index: 3;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  box-shadow: -6px 0 8px -4px rgba(0, 0, 0, 0.25);
+}
+
+.rules-list-actions-col .btn {
+  margin: 0.1rem 0.15rem 0.1rem 0;
+}
+
+.rules-list-actions-col .rules-inline-form {
+  display: inline-block;
+  margin: 0;
+  vertical-align: middle;
+}
+
+.review-dock {
+  /* Narrower Cursor-like panel so the list keeps usable width */
+  flex: 0 0 16.5rem;
+  width: 16.5rem;
+  max-width: 18rem;
+  box-sizing: border-box;
+  position: sticky;
+  top: 0.75rem;
+  align-self: flex-start;
+  height: calc(100vh - 1.5rem);
+  max-height: calc(100vh - 1.5rem);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card, #fff);
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06));
+  overflow: hidden;
+  z-index: 1;
+}
+
+.review-dock-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--muted, #f6f6f6);
+}
+
+.review-dock-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: var(--font-sans, inherit);
+  line-height: 1.25;
+}
+
+.review-dock-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.review-dock-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.5rem 0.65rem 0.65rem;
+}
+
+.rules-app--dock {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 0;
+  gap: 0.4rem;
+}
+
+.rules-app--dock .rules-orch-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+}
+
+.rules-app--dock .rules-orch-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+}
+
+.rules-app--dock .rules-context {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.rules-app--dock .rules-context > summary {
+  cursor: pointer;
+  color: var(--muted-foreground, #64748b);
+  font-size: 0.8rem;
+}
+
+.rules-app--dock .rules-context-help {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+}
+
+.rules-app--dock .rules-lead-note {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.rules-app--dock .rules-chat-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 0.4rem;
+}
+
+.rules-app--dock .rules-chat-log {
+  flex: 1 1 auto;
+  min-height: 3.5rem;
+  max-height: none;
+  overflow-y: auto;
+  margin-bottom: 0;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.rules-app--dock .rules-chat-form {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.rules-app--dock .rules-chat-input {
+  min-height: 2.75rem;
+  max-height: 6rem;
+  resize: vertical;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.55rem;
+}
+
+.rules-app--dock #rules-send-btn {
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.rules-app--dock .rules-review-panel {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.rules-app--dock .rules-review-heading {
+  font-size: 0.9rem;
+  margin: 0 0 0.35rem;
+}
+
+.rules-app--dock .rules-review-actions {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.review-dock-fab {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 30;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 900px) {
+  .review-dock {
+    flex-basis: 15rem;
+    width: 15rem;
+  }
+
+  .workbench-main {
+    max-width: calc(100% - 15.75rem);
+  }
+}
+
+@media (max-width: 640px) {
+  .workbench-layout:not([data-dock-collapsed="true"]) {
+    gap: 0.65rem;
+  }
+
+  .review-dock {
+    flex-basis: 13.5rem;
+    width: 13.5rem;
+    max-width: 14rem;
+    top: 0.5rem;
+    height: calc(100vh - 1rem);
+    max-height: calc(100vh - 1rem);
+  }
+
+  .workbench-main {
+    max-width: calc(100% - 14.25rem);
+  }
+
+  .review-dock-header {
+    padding: 0.5rem 0.55rem;
+  }
+
+  .review-dock-title {
+    font-size: 0.9rem;
+  }
 }

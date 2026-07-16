@@ -204,20 +204,10 @@ def category_audit_page_html(
       data-filter-include-tbc="{"true" if filt.include_tbc else "false"}"
       data-sweeps-url="{_esc(sweeps_url)}">
       <div class="category-audit-toolbar tbc-filter-bar">
-        <div class="tbc-filter-nl-row">
-          <label class="tbc-filter-field tbc-filter-field--grow">
-            <span class="tbc-filter-label">Review focus (natural language)</span>
-            <input type="text" id="category-audit-filter-nl" class="tbc-filter-input"
-              placeholder="e.g. review B2C cancellation; access loop"
-              autocomplete="off" />
-          </label>
-          <button type="button" class="btn btn-secondary btn-sm" id="category-audit-filter-nl-apply">Apply focus</button>
-        </div>
-        <p id="category-audit-filter-nl-status" class="meta tbc-filter-nl-status" hidden aria-live="polite"></p>
         <form id="category-audit-filter-form" class="tbc-filter-bar" method="get"
           action="/run/{_esc(run_id)}/category_audit">
           <label class="tbc-filter-field">
-            <span class="tbc-filter-label">Contains</span>
+            <span class="tbc-filter-label">Search</span>
             <input type="search" name="q" class="tbc-filter-input" value="{_esc(filt.q)}"
               placeholder="subject, body, tags" autocomplete="off" />
           </label>
@@ -230,7 +220,7 @@ def category_audit_page_html(
             </select>
           </label>
           <label class="tbc-filter-field tbc-filter-field--wide">
-            <span class="tbc-filter-label">{_esc(CATEGORY_FILTER_LABEL)} (tier4)</span>
+            <span class="tbc-filter-label">{_esc(CATEGORY_FILTER_LABEL)}</span>
             <input type="search" name="tier4" class="tbc-filter-input" value="{_esc(filt.tier4)}"
               placeholder="e.g. Cancellation Request" autocomplete="off" />
           </label>
@@ -249,6 +239,7 @@ def category_audit_page_html(
         </form>
       </div>
       <p class="meta category-audit-meta" role="status">{meta_line}</p>
+      <p id="category-audit-status" class="meta tbc-filter-nl-status" hidden aria-live="polite"></p>
 
       <section class="category-audit-tickets-section" aria-labelledby="category-audit-tickets-heading">
         <h2 class="section-header" id="category-audit-tickets-heading">{_esc(CATEGORY_AUDIT_TICKETS_HEADING)}</h2>

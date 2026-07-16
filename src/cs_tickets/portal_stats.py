@@ -12,6 +12,7 @@ from cs_tickets.portal_copy import (
     TBC_REASON_DISPLAY_BUCKETS,
     TBC_REASON_LABELS,
     TBC_REASON_SUMMARY_HEADING,
+    TIER_STATS_TABLE_HEADERS,
 )
 
 TIER_KEYS = ("Tier1_Segment", "Tier2_Stream", "Tier3_Cat", "Tier4_Type")
@@ -154,9 +155,9 @@ def tier_stats_sheet_rows(rows: list[dict[str, Any]]) -> tuple[list[str], list[l
 
 
 def tier_stats_table_html(rows: list[dict[str, Any]], *, run_id: str | None = None) -> str:
-    """HTML table: Tier1–Tier4 + COUNTA of id, pivot-style blanks, grand total row."""
+    """HTML table: analyst tier labels + ticket count, pivot-style blanks, grand total row."""
     body, grand, body_tuples = tier_stats_display_rows(rows)
-    headers = ["Tier1_Segment", "Tier2_Stream", "Tier3_Cat", "Tier4_Type", "COUNTA of id"]
+    headers = list(TIER_STATS_TABLE_HEADERS)
     if run_id:
         headers.append("")
     th = "".join(f"<th>{_h(c)}</th>" for c in headers)

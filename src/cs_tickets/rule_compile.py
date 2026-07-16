@@ -56,11 +56,96 @@ class CompileResult:
     warnings: tuple[str, ...]
     errors: tuple[str, ...]
     raw: dict[str, Any] | None = None
+    clarify_message: str | None = None
+    attempts: int = 1
 
 
 class CompileError(Exception):
     """User-facing compile failure."""
 
+
+# Mechanical validation errors that warrant bounded LLM retry
+_RETRYABLE_ERROR_MARKERS = (
+    "not in allow-list",
+    "match condition",
+    "already exists",
+    "missing 'rule'",
+    "empty content",
+    "no rule",
+)
+
+
+def _errors_are_retryable(errors: tuple[str, ...]) -> bool:
+    if not errors:
+        return False
+    blob = " ".join(errors).lower()
+    return any(m in blob for m in _RETRYABLE_ERROR_MARKERS)
+
+
+def human_compile_clarify(errors: tuple[str, ...], *, message: str) -> str:
+    """Analyst-facing clarify ask — no raw schema dumps."""
+    joined = " ".join(errors).lower()
+    if "allow-list" in joined or "tier" in joined:
+        return (
+            "I tried to draft a routing rule, but couldn't map it to a valid category path. "
+            "Could you specify the target path (e.g. Billing & Admin > System Report) "
+            "and whether this should stay a normal rule or a shield (always-win) rule?"
+        )
+    if "match condition" in joined:
+        return (
+            "I couldn't extract clear match signals (keywords / tags). "
+            "Could you list the phrases that should trigger this rule "
+            "(and any that should not)?"
+        )
+    if "already exists" in joined:
+        return (
+            "That rule id already exists in live config. "
+            "Should I refine the existing rule instead, or use a new id?"
+        )
+    return (
+        "I couldn't draft a valid rule from that request. "
+        "Please clarify the target category, key match phrases, and whether this "
+        "should beat shields like Stefan Rule. "
+        f"(Original focus: {message[:120]})"
+    )
+
+
+def post_compile_warnings(
+    rule: RuleSpec,
+    live_rules: tuple[RuleSpec, ...],
+) -> tuple[str, ...]:
+    """C.3 — shield weight floors + soft semantic collision hints (non-blocking)."""
+    warnings: list[str] = []
+    if rule.override:
+        floor = SHIELD_WEIGHT_MIN.get("junk", 16.0)
+        if "stefan" in rule.id.lower() or "stefan" in (rule.display_name or "").lower():
+            floor = SHIELD_WEIGHT_MIN.get("stefan", 18.0)
+        if "live_chat" in rule.id.lower() or "chat" in rule.id.lower():
+            floor = max(floor, SHIELD_WEIGHT_MIN.get("live_chat", 20.0))
+        if rule.weight < floor:
+            warnings.append(
+                f"Shield weight {rule.weight} is below floor {floor} — raise weight or drop override."
+            )
+    # Semantic collision: same first blob token as an existing shield
+    cand_blobs = {b.lower() for b in rule.any_blob[:3] if b}
+    for live in live_rules:
+        if not live.override:
+            continue
+        if live.id == rule.id:
+            continue
+        live_blobs = {b.lower() for b in live.any_blob[:5] if b}
+        if cand_blobs and live_blobs.intersection(cand_blobs):
+            warnings.append(
+                f"May overlap live shield `{live.id}` (shared blob signals) — preview carefully."
+            )
+            break
+        # same tier path + both override
+        if rule.override and live.tier == rule.tier:
+            warnings.append(
+                f"Another shield `{live.id}` already targets the same path — check precedence."
+            )
+            break
+    return tuple(warnings)
 
 def normalize_user_message(text: str) -> str:
     lowered = text.strip().lower()
@@ -501,8 +586,14 @@ def compile_rule_message(
     prior_rule: RuleSpec | None = None,
     exemplar_row: dict[str, Any] | None = None,
     explain_payload: dict[str, Any] | None = None,
+    max_retries: int = 2,
 ) -> CompileResult:
-    """Compile one user message into a RuleSpec."""
+    """Compile one user message into a RuleSpec.
+
+    On mechanical validation failures, retry the LLM up to ``max_retries`` times
+    with the error text appended. Exhausted retries return ``clarify_message``
+    for analysts (no raw schema dump required in UI).
+    """
     normalized = normalize_user_message(message)
     if not normalized:
         return CompileResult(
@@ -510,6 +601,7 @@ def compile_rule_message(
             rationale="",
             warnings=(),
             errors=("Message is empty.",),
+            clarify_message="Please describe the routing rule you want to draft.",
         )
 
     live_ids = frozenset(r.id for r in live_rules)
@@ -518,99 +610,173 @@ def compile_rule_message(
         explain_payload=explain_payload,
         prior_rule=prior_rule,
     )
-    user_blob = normalized
+    base_user = normalized
     if context:
-        user_blob = f"{context}\n\nUser message:\n{normalized}"
+        base_user = f"{context}\n\nUser message:\n{normalized}"
 
     provider, api_key, model, api_base = _compile_llm_settings()
+    attempts = 0
+    last_errors: tuple[str, ...] = ()
+    last_rationale = ""
+    last_warnings: tuple[str, ...] = ()
+    last_raw: dict[str, Any] | None = None
+    retry_hints = ""
 
-    raw: dict[str, Any] | None = None
-    rationale = ""
-    warnings: tuple[str, ...] = ()
-    rule: RuleSpec | None = None
-
-    if api_key:
-        system = build_compile_system_prompt(allow, live_rules)
-        try:
-            raw = _call_compile_llm(
-                system,
-                user_blob,
-                provider=provider,
-                model=model,
-                api_key=api_key,
-                api_base=api_base,
+    while attempts <= max_retries:
+        attempts += 1
+        user_blob = base_user
+        if retry_hints:
+            user_blob = (
+                f"{base_user}\n\nPrevious compile failed validation. Fix these issues "
+                f"and return valid RuleSpec JSON only:\n{retry_hints}"
             )
-            rule, rationale, warnings = _parse_llm_response(raw)
-        except (CompileError, json.JSONDecodeError, ValueError, KeyError) as exc:
+
+        raw: dict[str, Any] | None = None
+        rationale = ""
+        warnings: tuple[str, ...] = ()
+        rule: RuleSpec | None = None
+
+        if api_key:
+            system = build_compile_system_prompt(
+                allow,
+                live_rules,
+                user_message=normalized,
+            )
+            try:
+                raw = _call_compile_llm(
+                    system,
+                    user_blob,
+                    provider=provider,
+                    model=model,
+                    api_key=api_key,
+                    api_base=api_base,
+                )
+                rule, rationale, warnings = _parse_llm_response(raw)
+            except (CompileError, json.JSONDecodeError, ValueError, KeyError) as exc:
+                last_errors = (str(exc),)
+                last_rationale = str(exc)
+                last_raw = raw
+                if attempts <= max_retries and _errors_are_retryable(last_errors):
+                    retry_hints = str(exc)
+                    continue
+                clarify = human_compile_clarify(last_errors, message=normalized)
+                return CompileResult(
+                    rule=None,
+                    rationale=str(exc),
+                    warnings=(),
+                    errors=last_errors,
+                    raw=raw,
+                    clarify_message=clarify,
+                    attempts=attempts,
+                )
+        else:
+            heuristic = _heuristic_compile(normalized, allow, prior_rule=prior_rule)
+            if heuristic.errors:
+                return CompileResult(
+                    rule=None,
+                    rationale=heuristic.rationale,
+                    warnings=heuristic.warnings,
+                    errors=heuristic.errors,
+                    raw=heuristic.raw,
+                    clarify_message=human_compile_clarify(
+                        heuristic.errors, message=normalized
+                    ),
+                    attempts=attempts,
+                )
+            rule = heuristic.rule
+            rationale = heuristic.rationale
+            warnings = heuristic.warnings
+            raw = heuristic.raw
+
+        if rule is None:
+            last_errors = ("Compile produced no rule.",)
+            last_rationale = rationale
+            last_warnings = warnings
+            last_raw = raw
+            if attempts <= max_retries:
+                retry_hints = "Compile produced no rule object."
+                continue
+            break
+
+        if not rule.source_message:
+            rule = replace(
+                rule,
+                source_message=normalized[:500],
+                source=rule.source or "explicit_rule",
+            )
+
+        errors = _validate_compiled_rule(
+            rule,
+            allow,
+            live_ids,
+            prior_rule_id=prior_rule.id if prior_rule else None,
+        )
+        if errors:
+            last_errors = errors
+            last_rationale = rationale
+            last_warnings = warnings
+            last_raw = raw
+            if attempts <= max_retries and _errors_are_retryable(errors):
+                retry_hints = "; ".join(errors)
+                continue
             return CompileResult(
                 rule=None,
-                rationale=str(exc),
-                warnings=(),
-                errors=(str(exc),),
+                rationale=rationale,
+                warnings=warnings,
+                errors=errors,
+                raw=raw,
+                clarify_message=human_compile_clarify(errors, message=normalized),
+                attempts=attempts,
             )
-    else:
-        heuristic = _heuristic_compile(normalized, allow, prior_rule=prior_rule)
-        if heuristic.errors:
-            return heuristic
-        rule = heuristic.rule
-        rationale = heuristic.rationale
-        warnings = heuristic.warnings
-        raw = heuristic.raw
 
-    if rule is None:
+        extra = post_compile_warnings(rule, live_rules)
+        warnings = warnings + extra
+        if rule.override and rule.weight < SHIELD_WEIGHT_MIN["junk"]:
+            rule = replace(rule, weight=SHIELD_WEIGHT_MIN["junk"])
+            warnings = warnings + ("Raised weight for override rule.",)
+
         return CompileResult(
-            rule=None,
+            rule=rule,
             rationale=rationale,
             warnings=warnings,
-            errors=("Compile produced no rule.",),
-        )
-
-    if not rule.source_message:
-        rule = replace(
-            rule,
-            source_message=normalized[:500],
-            source=rule.source or "explicit_rule",
-        )
-
-    errors = _validate_compiled_rule(
-        rule,
-        allow,
-        live_ids,
-        prior_rule_id=prior_rule.id if prior_rule else None,
-    )
-    if errors:
-        return CompileResult(
-            rule=None,
-            rationale=rationale,
-            warnings=warnings,
-            errors=errors,
+            errors=(),
             raw=raw,
+            attempts=attempts,
         )
-    if rule.override and rule.weight < SHIELD_WEIGHT_MIN["junk"]:
-        rule = replace(rule, weight=SHIELD_WEIGHT_MIN["junk"])
-        warnings = warnings + ("Raised weight for override rule.",)
 
+    clarify = human_compile_clarify(last_errors, message=normalized)
     return CompileResult(
-        rule=rule,
-        rationale=rationale,
-        warnings=warnings,
-        errors=(),
-        raw=raw,
+        rule=None,
+        rationale=last_rationale,
+        warnings=last_warnings,
+        errors=last_errors or ("Compile failed.",),
+        raw=last_raw,
+        clarify_message=clarify,
+        attempts=attempts,
     )
 
 
 def compile_result_to_api_dict(result: CompileResult) -> dict[str, Any]:
+    from cs_tickets.consistency_gateway import attach_compile_risk
+
     if result.errors:
-        return {
+        payload = {
             "ok": False,
             "errors": list(result.errors),
             "rationale": result.rationale,
             "warnings": list(result.warnings),
+            "attempts": result.attempts,
         }
+        if result.clarify_message:
+            payload["clarify_message"] = result.clarify_message
+        return attach_compile_risk(payload)
     assert result.rule is not None
-    return {
-        "ok": True,
-        "rule": rule_spec_to_json(result.rule),
-        "rationale": result.rationale,
-        "warnings": list(result.warnings),
-    }
+    return attach_compile_risk(
+        {
+            "ok": True,
+            "rule": rule_spec_to_json(result.rule),
+            "rationale": result.rationale,
+            "warnings": list(result.warnings),
+            "attempts": result.attempts,
+        }
+    )

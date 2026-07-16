@@ -15,6 +15,17 @@ def test_rules_list_page_renders() -> None:
     assert resp.status_code == 200
     assert "Routing Rules" in resp.text
     assert "Add rule" in resp.text
+    assert 'id="review-dock"' in resp.text
+    assert 'id="workbench-layout"' in resp.text
+    assert "portal-main--wide" in resp.text
+    assert "review_dock.js" in resp.text
+    assert 'data-orchestration="true"' in resp.text
+    assert 'data-dock="true"' in resp.text
+    # Pop out goes to full-page editor when no run is bound
+    assert 'href="/rules/new"' in resp.text
+    assert "review-dock-popout" in resp.text
+    assert "Search focus (natural language)" not in resp.text
+    assert "rules-filter-nl" not in resp.text
 
 
 def test_rules_new_page_renders() -> None:
@@ -22,6 +33,8 @@ def test_rules_new_page_renders() -> None:
     resp = client.get("/rules/new")
     assert resp.status_code == 200
     assert "rules-app" in resp.text
+    # Full-page editor (not the side dock shell)
+    assert 'id="review-dock"' not in resp.text
 
 
 def test_rules_compile_endpoint(repo_root: Path) -> None:

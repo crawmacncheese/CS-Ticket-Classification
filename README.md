@@ -1,6 +1,6 @@
 # CS tickets (v2)
 
-> **Monorepo:** Training wizard, allowlist compare, TBC trends. **v1** (production Learn portal) is in [../v1/](../v1/). Layout: [../docs/MONOREPO.md](../docs/MONOREPO.md).
+> **Handoff:** New maintainers start at [docs/HANDOFF.md](docs/HANDOFF.md). Flow diagrams: [docs/flows.md](docs/flows.md). Full doc map: [docs/README.md](docs/README.md).
 
 Zendesk **NDJSON** export → **SCMP master-sheet** rows: flatten ticket fields, assign **Tier1–Tier5** using a weighted rule engine constrained by an **allow-list** (workbook + taxonomy CSV + small pipeline fallbacks). Ship as a **CLI** (`cs-tickets-pipeline`) and optional **local FastAPI portal** (upload, pivot-style stats, **`.xlsx`** download).
 
@@ -90,9 +90,18 @@ The classifier sums weights by 5-tuple, picks the highest score, and accepts it 
 | `src/cs_tickets/classifier_rules.json` | Data-driven high-confidence rule specs for simple tag/text/url matches. |
 | `src/cs_tickets/pipeline.py` | **`iter_master_rows`** streams NDJSON → flattened row + tiers. |
 | `src/cs_tickets/cli.py` | Typer entry **`cs-tickets-pipeline`** → `run_to_csv`. |
-| `src/cs_tickets/portal_app.py` | FastAPI upload, tier stats HTML, **`portal_workbook`** `.xlsx` download. |
+| `src/cs_tickets/portal_app.py` | FastAPI app: upload, Learn, Rules, category audit, TBC queue, review chat. |
 | `src/cs_tickets/portal_stats.py` | Pivot-style tier counts for UI + tier sheet in workbook. |
 | `src/cs_tickets/portal_workbook.py` | **openpyxl** workbook: **Tickets** + **Tier breakdown** sheets. |
+| `src/cs_tickets/portal_learn.py` | Learn New wizard (process / preview / confirm / revert). |
+| `src/cs_tickets/portal_rules.py` | Explicit rule authoring UI + compile / preview / confirm APIs. |
+| `src/cs_tickets/portal_category_audit.py` | Category bucket review, sweeps, export. |
+| `src/cs_tickets/portal_tbc_queue.py` | TBC ticket workbench + chunk ack. |
+| `src/cs_tickets/portal_review_chat.py` | Review chat turns + intent routing substrate. |
+| `src/cs_tickets/consistency_gateway.py` | Proposal validation, risk grades, soft conflict warnings. |
+| `src/cs_tickets/rule_compile.py` | LLM rule drafting (not used by `/run` classify). |
+| `src/cs_tickets/runtime_config.py` | Bootstrap and resolve `runs/live/` paths. |
+| `src/cs_tickets/drive_live_config.py` | Sync live config from Google Drive. |
 | `src/cs_tickets/tbc_trends.py` | TBC trend snapshots (SQLite), subject clustering, rollups. |
 | `src/cs_tickets/portal_trends.py` | Portal **TBC trends dashboard** HTML (`GET /dashboard`). |
 | `tools/audit_classifier.py` | Local audit helper for TBC rate, top fallback signals, scored tuples, and unreachable allow-list tuples. |
@@ -252,6 +261,12 @@ pytest
 
 | Path | Role |
 |------|------|
+| `docs/HANDOFF.md` | **Start here** for project handoff and daily maintenance. |
+| `docs/README.md` | Documentation index and navigation. |
+| `docs/configuration.md` | Environment variables and runtime paths. |
+| `docs/ops-runbook.md` | Deploy, rollback, prod URLs, smoke checks. |
+| `docs/api-reference.md` | Portal HTTP routes. |
+| `docs/architecture/agent-skills-framework.md` | Review chat, atomic skills, Consistency Gateway. |
 | `docs/prd.md` | Product requirements, metrics, phases, user stories. |
 | `docs/design.md` | Technical architecture, classifier, deployment, limitations. |
 | `doc/Taxonomy.csv` | Pivot-style tier paths (CSV → allow-list with granular `N/A`). |

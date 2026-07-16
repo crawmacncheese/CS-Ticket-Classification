@@ -87,9 +87,7 @@ function initTicketPreview(root) {
   const showDetails = root.querySelector(".show-ticket-preview-details");
   const showTbcOnly = root.querySelector(".show-ticket-preview-tbc-only");
   const categorySelect = root.querySelector(".ticket-preview-category-filter");
-  const subjectInput = root.querySelector(".ticket-preview-subject-filter");
-  const tagInput = root.querySelector(".ticket-preview-tag-filter");
-  const containsInput = root.querySelector(".ticket-preview-contains-filter");
+  const searchInput = root.querySelector(".ticket-preview-search-filter");
   const segmentSelect = root.querySelector(".ticket-preview-segment-filter");
   const categoryFocusInput = root.querySelector(".ticket-preview-category-focus-filter");
   const nlInput = root.querySelector(".ticket-preview-nl-input");
@@ -111,6 +109,7 @@ function initTicketPreview(root) {
   const auditLink = root.querySelector(".ticket-preview-audit-link");
   let selectedRowId = null;
   let explainCache = new Map();
+  let tbcReasonFocus = "";
 
   // Make run context available for rule preview pages opened later.
   if (runId) {
@@ -231,7 +230,7 @@ function initTicketPreview(root) {
     if (category && payload.category_rows?.[category]?.length) {
       return payload.category_rows[category];
     }
-    if (tbcOnly && payload.tbc_rows?.length) {
+    if ((tbcOnly || tbcReasonFocus) && payload.tbc_rows?.length) {
       return payload.tbc_rows;
     }
     return payload.rows || [];
@@ -250,15 +249,17 @@ function initTicketPreview(root) {
 
   function matchesTbc(row) {
     const tbcOnly = showTbcOnly?.checked || false;
+    if (tbcReasonFocus) {
+      const reason = row.tbc_reason || "not_tbc";
+      if (tbcReasonFocus.startsWith("!")) {
+        const excluded = tbcReasonFocus.slice(1);
+        return reason !== "not_tbc" && reason !== excluded;
+      }
+      return reason === tbcReasonFocus;
+    }
     if (!tbcOnly) return true;
     if (payload.tbc_rows?.length) return true;
     return row.is_tbc || row.tbc_reason !== "not_tbc";
-  }
-
-  function matchesSubject(row) {
-    const q = (subjectInput?.value || "").trim().toLowerCase();
-    if (!q) return true;
-    return String(row.subject || "").toLowerCase().includes(q);
   }
 
   function rowSearchBlob(row) {
@@ -277,8 +278,8 @@ function initTicketPreview(root) {
     ).toLowerCase();
   }
 
-  function matchesContains(row) {
-    const q = (containsInput?.value || "").trim().toLowerCase();
+  function matchesSearch(row) {
+    const q = (searchInput?.value || "").trim().toLowerCase();
     if (!q) return true;
     if (q.includes("|")) {
       const tokens = q
@@ -311,13 +312,6 @@ function initTicketPreview(root) {
     return parts.some((p) => tier.includes(p));
   }
 
-  function matchesTag(row) {
-    const q = (tagInput?.value || "").trim().toLowerCase();
-    if (!q) return true;
-    const tags = row.tags_list || parseTagsList(row.tags);
-    return tags.some((t) => String(t).toLowerCase().includes(q));
-  }
-
   function countInRun(category) {
     if (!category) return (payload.rows || []).length;
     return (payload.categories || [])
@@ -341,10 +335,8 @@ function initTicketPreview(root) {
         matchesCategory(r) &&
         matchesTbc(r) &&
         matchesSegment(r) &&
-        matchesContains(r) &&
-        matchesCategoryFocus(r) &&
-        matchesSubject(r) &&
-        matchesTag(r)
+        matchesSearch(r) &&
+        matchesCategoryFocus(r)
     );
 
     const tb = tbody();
@@ -383,8 +375,7 @@ function initTicketPreview(root) {
 
   function updateMeta(visible, category, baseRows) {
     const tbcOnly = showTbcOnly?.checked || false;
-    const hasTextFilter =
-      (subjectInput?.value || "").trim() || (tagInput?.value || "").trim();
+    const hasTextFilter = (searchInput?.value || "").trim();
 
     if (categoryMeta) {
       if (category && payload.filter_copy?.category_meta) {
@@ -459,14 +450,8 @@ function initTicketPreview(root) {
   if (categorySelect) {
     categorySelect.addEventListener("change", applyFilters);
   }
-  if (subjectInput) {
-    subjectInput.addEventListener("input", debounce(applyFilters, 200));
-  }
-  if (tagInput) {
-    tagInput.addEventListener("input", debounce(applyFilters, 200));
-  }
-  if (containsInput) {
-    containsInput.addEventListener("input", debounce(applyFilters, 200));
+  if (searchInput) {
+    searchInput.addEventListener("input", debounce(applyFilters, 200));
   }
   if (categoryFocusInput) {
     categoryFocusInput.addEventListener("input", debounce(applyFilters, 200));
@@ -507,7 +492,7 @@ function initTicketPreview(root) {
         return;
       }
       const f = data.run_filter || data.filter || {};
-      if (containsInput) containsInput.value = f.q || "";
+      if (searchInput) searchInput.value = f.q || "";
       if (segmentSelect) segmentSelect.value = f.tier1 || "";
       if (categoryFocusInput) categoryFocusInput.value = (f.categories || []).join(", ");
       showNlStatus((data.rationale || "Focus applied.") + (data.source ? ` (${data.source})` : ""), false);
@@ -528,6 +513,58 @@ function initTicketPreview(root) {
       }
     });
   }
+
+  window.addEventListener("cs-tickets:apply-review-focus", (ev) => {
+    const detail = (ev && ev.detail) || {};
+    const f = detail.filter || detail.workbench_filter || {};
+    if (detail.clear || f.active === false) {
+      if (searchInput) searchInput.value = "";
+      if (segmentSelect) segmentSelect.value = "";
+      if (categoryFocusInput) categoryFocusInput.value = "";
+      tbcReasonFocus = "";
+      if (showTbcOnly) showTbcOnly.checked = false;
+      if (tbcMeta) {
+        tbcMeta.hidden = true;
+        tbcMeta.textContent = "";
+      }
+      applyFilters();
+      if (typeof detail._markApplied === "function") detail._markApplied("preview");
+      return;
+    }
+    const cats = Array.isArray(f.categories) ? f.categories : [];
+    const reason = f.tbc_reason || "";
+    if (!(f.q || f.tier1 || cats.length || reason || f.active)) return;
+    if (searchInput) searchInput.value = f.q || "";
+    if (segmentSelect) segmentSelect.value = f.tier1 || "";
+    if (categoryFocusInput) categoryFocusInput.value = cats.join(", ");
+    tbcReasonFocus = reason;
+    if (reason && showTbcOnly) showTbcOnly.checked = true;
+    applyFilters();
+    if (typeof detail._markApplied === "function") detail._markApplied("preview");
+    root.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    if (reason && tbcMeta) {
+      tbcMeta.hidden = false;
+      tbcMeta.textContent =
+        (reason.startsWith("!")
+          ? "Showing TBC except " + reason.slice(1)
+          : "Showing TBC reason: " + reason) + " (from Review chat).";
+    }
+  });
+
+  window.addEventListener("cs-tickets:clear-review-focus", (ev) => {
+    const detail = (ev && ev.detail) || {};
+    if (searchInput) searchInput.value = "";
+    if (segmentSelect) segmentSelect.value = "";
+    if (categoryFocusInput) categoryFocusInput.value = "";
+    tbcReasonFocus = "";
+    if (showTbcOnly) showTbcOnly.checked = false;
+    if (tbcMeta) {
+      tbcMeta.hidden = true;
+      tbcMeta.textContent = "";
+    }
+    applyFilters();
+    if (typeof detail._markApplied === "function") detail._markApplied("preview");
+  });
 
   function reasonLabel(code) {
     return (payload.labels && payload.labels[code]) || code;

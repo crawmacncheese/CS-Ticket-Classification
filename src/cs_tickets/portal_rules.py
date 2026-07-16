@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from cs_tickets.classifier_rules import RuleSpec, _rule_from_dict, rule_spec_to_json
-from cs_tickets.classify import classify_row_with_explanation
+from cs_tickets.classify import ClassificationDecision, classify_row_with_explanation
 from cs_tickets.portal_classify_context import build_tbc_rule_prefill
 from cs_tickets.taxonomy import AllowList
 
@@ -119,27 +119,17 @@ def rules_filter_bar_html(
     meta = f"Showing <strong>{shown}</strong> of <strong>{total}</strong> rules."
     return f"""
     <form class="tbc-filter-bar rules-filter-bar" method="get" action="/rules">
-      <div class="tbc-filter-nl-row">
-        <label class="tbc-filter-field tbc-filter-field--grow">
-          <span class="tbc-filter-label">Search focus (natural language)</span>
-          <input type="text" id="rules-filter-nl" class="tbc-filter-input"
-            placeholder="e.g. review B2C cancellation; stripe payment completed"
-            autocomplete="off" />
-        </label>
-        <button type="button" class="btn btn-secondary btn-sm" id="rules-filter-nl-apply">Apply focus</button>
-      </div>
-      <p id="rules-filter-nl-status" class="meta tbc-filter-nl-status" hidden aria-live="polite"></p>
       <label class="tbc-filter-field tbc-filter-field--grow">
         <span class="tbc-filter-label">Search</span>
         <input type="search" name="q" class="tbc-filter-input"
           placeholder="id, match text, category…" value="{_esc(q)}" autocomplete="off" />
       </label>
       <label class="tbc-filter-field">
-        <span class="tbc-filter-label">Tier1</span>
+        <span class="tbc-filter-label">Segment</span>
         <input type="text" name="tier1" class="tbc-filter-input" value="{_esc(tier1)}" placeholder="B2C/B2B" />
       </label>
       <label class="tbc-filter-field">
-        <span class="tbc-filter-label">Tier4</span>
+        <span class="tbc-filter-label">Category</span>
         <input type="text" name="tier4" class="tbc-filter-input" value="{_esc(tier4)}" placeholder="e.g. System Report" />
       </label>
       <label class="tbc-filter-field">
@@ -216,7 +206,7 @@ def rules_list_html(
             f"<td>{_esc(rule_matchers_summary(rule))}</td>"
             f"<td>{'yes' if rule.override else '—'}</td>"
             f"<td>{status}</td>"
-            f"<td>"
+            f"<td class=\"rules-list-actions-col\">"
             f"<a class=\"btn btn-secondary btn-sm\" href=\"/rules/new?rule_id={_esc(rule.id)}\">Edit</a> "
             + (
                 f"<form class=\"rules-inline-form\" method=\"post\" action=\"/rules/disable\" "
@@ -231,12 +221,15 @@ def rules_list_html(
     body = "\n".join(rows) or "<tr><td colspan=\"6\" class=\"meta\">No rules in live config.</td></tr>"
     return f"""
     <p class="meta">Live config version <strong>{config_version}</strong>.</p>
-    <table class="stats-table rules-list-table">
-      <thead><tr>
-        <th>Rule</th><th>Category</th><th>Match</th><th>Override</th><th>Status</th><th></th>
-      </tr></thead>
-      <tbody>{body}</tbody>
-    </table>
+    <div class="rules-list-scroll">
+      <table class="stats-table rules-list-table">
+        <thead><tr>
+          <th>Rule</th><th>Category</th><th>Match</th><th>Override</th><th>Status</th>
+          <th class="rules-list-actions-col">Actions</th>
+        </tr></thead>
+        <tbody>{body}</tbody>
+      </table>
+    </div>
     """
 
 
@@ -247,6 +240,8 @@ def rules_editor_html(
     ticket_id: str = "",
     initial_rule: RuleSpec | None = None,
     can_confirm: bool = True,
+    orchestration: bool = False,
+    dock: bool = False,
 ) -> str:
     initial_json = json.dumps(rule_spec_to_json(initial_rule)) if initial_rule else "null"
     # Always include run/ticket inputs so preview can work even when the page
@@ -254,22 +249,33 @@ def rules_editor_html(
     # from the last viewed run via sessionStorage.
     run_id_value = _esc(run_id)
     ticket_id_value = _esc(ticket_id)
+    orch = bool(orchestration or run_id)
+    mode_label = "Config" if initial_rule else ("Audit" if orch else "Config")
+    badge = (
+        f'<span id="rules-orch-badge" class="rules-orch-badge" data-mode="{_esc(mode_label.lower())}">'
+        f"{_esc(mode_label)}</span>"
+        if orch
+        else ""
+    )
+    context_open = ""
+    if not dock and not run_id_value:
+        context_open = " open"
     context_panel = f"""
-      <details class="rules-context" {"open" if not run_id_value else ""}>
+      <details class="rules-context"{context_open}>
         <summary>Optional run context</summary>
         <div class="tbc-filter-bar rules-context-bar">
           <label class="tbc-filter-field">
             <span class="tbc-filter-label">Run ID</span>
             <input type="text" id="rules-run-id" class="tbc-filter-input" value="{run_id_value}"
-              placeholder="Used for linking back to a run after Confirm" autocomplete="off" />
+              placeholder="Used for profile, preview, and reclassify after Confirm" autocomplete="off" />
           </label>
           <label class="tbc-filter-field">
             <span class="tbc-filter-label">Ticket ID</span>
             <input type="text" id="rules-ticket-id" class="tbc-filter-input" value="{ticket_id_value}"
               placeholder="Optional; used for rule authoring context only" autocomplete="off" />
           </label>
-          <p class="meta" style="margin: 6px 0 0 0;">
-            Preview uses the <strong>uploaded export</strong> below (not a run).
+          <p class="meta rules-context-help">
+            With a run id, preview uses the live run rows. Upload preview remains as a fallback.
           </p>
         </div>
       </details>
@@ -281,29 +287,32 @@ def rules_editor_html(
         if can_confirm
         else '<p class="meta rules-lead-note">Compiled rules need a team lead to confirm live.</p>'
     )
-    return f"""
-    <script type="application/json" id="rules-initial-rule">{initial_json}</script>
-    <div id="rules-app" class="rules-app" data-can-confirm="{"true" if can_confirm else "false"}">
-      {context_panel}
-      {lead_note}
-      <div class="rules-chat-panel">
-        <div id="rules-chat-log" class="rules-chat-log" aria-live="polite"></div>
-        <form id="rules-chat-form" class="rules-chat-form">
-          <label class="sr-only" for="rules-chat-input">Describe a routing rule</label>
-          <textarea id="rules-chat-input" class="rules-chat-input" rows="3"
-            placeholder="e.g. Map &quot;Stripe payment completed&quot; to Billing System Report">{prefill_esc}</textarea>
-          <button type="submit" class="btn btn-primary" id="rules-send-btn">Compile</button>
-        </form>
-      </div>
-      <div id="rules-review-panel" class="rules-review-panel" hidden>
-        <h2 class="rules-review-heading">Compiled rule (review before Confirm)</h2>
-        <div id="rules-review-summary" class="rules-review-summary"></div>
-        <details class="rules-advanced-edit">
-          <summary>Advanced edit (JSON)</summary>
-          <textarea id="rules-advanced-json" class="rules-advanced-json" rows="12"></textarea>
-        </details>
-        <div class="rules-review-actions">
-          <div class="rules-upload-preview">
+    placeholder = (
+        "e.g. review B2C — or show all TBC — or Map \"…\" to System Report"
+        if orch
+        else 'e.g. Map &quot;Stripe payment completed&quot; to Billing System Report'
+    )
+    send_label = "Send" if orch else "Compile"
+    orch_hint = ""
+    if orch and not dock:
+        orch_hint = (
+            '<p class="meta rules-orch-hint">Orchestration mode: profile (“review B2C”), '
+            "open TBC (“show all TBC”), or draft a rule with a Map/compile phrase — "
+            "unclear asks will clarify instead of inventing a rule.</p>"
+        )
+    # Dock: skip long hint — badge alone is enough; keep chat input above the fold.
+    # In the side dock, run_id is fixed; hide optional context to save space.
+    if dock and run_id_value:
+        context_panel = (
+            f'<input type="hidden" id="rules-run-id" value="{run_id_value}" />'
+            f'<input type="hidden" id="rules-ticket-id" value="{ticket_id_value}" />'
+        )
+    chat_rows = "2" if dock else "3"
+    advanced_rows = "8" if dock else "12"
+    upload_block = ""
+    if not dock:
+        upload_block = """
+          <div class="rules-upload-preview" id="rules-upload-preview-wrap">
             <label class="meta rules-upload-label">
               Optional: upload an export file to preview against it
             </label>
@@ -316,13 +325,124 @@ def rules_editor_html(
             <button type="button" class="btn btn-secondary btn-sm" id="rules-preview-upload-btn" disabled>
               Preview on uploaded file
             </button>
-          </div>
+          </div>"""
+    else:
+        # Keep ids so rules.js optional upload handlers stay no-ops when missing.
+        upload_block = (
+            '<div class="rules-upload-preview" id="rules-upload-preview-wrap" hidden>'
+            '<input type="file" id="rules-upload-preview-file" accept=".json,.ndjson" />'
+            '<button type="button" id="rules-preview-upload-btn" hidden disabled></button>'
+            "</div>"
+        )
+    dock_cls = " rules-app--dock" if dock else ""
+    return f"""
+    <script type="application/json" id="rules-initial-rule">{initial_json}</script>
+    <div id="rules-app" class="rules-app{dock_cls}"
+      data-can-confirm="{"true" if can_confirm else "false"}"
+      data-orchestration="{"true" if orch else "false"}"
+      data-preview-ok="false"
+      data-dock="{"true" if dock else "false"}">
+      <div class="rules-orch-header">
+        {badge}
+        {orch_hint}
+      </div>
+      {context_panel}
+      {lead_note}
+      <div class="rules-chat-panel">
+        <div id="rules-chat-log" class="rules-chat-log" aria-live="polite"></div>
+        <div id="rules-exec-log" class="rules-exec-log meta" hidden></div>
+        <form id="rules-chat-form" class="rules-chat-form">
+          <label class="sr-only" for="rules-chat-input">Describe a routing rule or review focus</label>
+          <textarea id="rules-chat-input" class="rules-chat-input" rows="{chat_rows}"
+            placeholder="{placeholder}">{prefill_esc}</textarea>
+          <button type="submit" class="btn btn-primary" id="rules-send-btn">{send_label}</button>
+        </form>
+      </div>
+      <div id="rules-review-panel" class="rules-review-panel" hidden>
+        <h2 class="rules-review-heading">Compiled rule (review before Confirm)</h2>
+        <div id="rules-review-summary" class="rules-review-summary"></div>
+        <details class="rules-advanced-edit">
+          <summary>Advanced edit (JSON)</summary>
+          <textarea id="rules-advanced-json" class="rules-advanced-json" rows="{advanced_rows}"></textarea>
+        </details>
+        <div class="rules-review-actions">
+          {upload_block}
           <button type="button" class="btn btn-primary" id="rules-confirm-btn" disabled{confirm_attrs}>Confirm live</button>
         </div>
         <div id="rules-preview-results" class="rules-preview-results" hidden></div>
       </div>
     </div>
     """
+
+
+def _evidence_payload(decision: ClassificationDecision) -> list[dict[str, Any]]:
+    return [
+        {
+            "rule_id": ev.rule_id,
+            "weight": ev.weight,
+            "signal": ev.signal,
+            "tier": list(ev.tier),
+        }
+        for ev in decision.evidence
+    ]
+
+
+def _rule_ids(decision: ClassificationDecision) -> set[str]:
+    return {ev.rule_id for ev in decision.evidence}
+
+
+def summarize_preview_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate preview rows for cards: changed / matched / shield overlap counts."""
+    changed = 0
+    matched = 0
+    won = 0
+    shield_overlap = 0
+    shield_rule_counts: dict[str, int] = {}
+    for row in results:
+        if row.get("tier_changed"):
+            changed += 1
+        if row.get("candidate_matched") or row.get("matched"):
+            matched += 1
+        if row.get("candidate_won"):
+            won += 1
+        overlaps = row.get("shield_overlap") or []
+        if overlaps:
+            shield_overlap += 1
+            for rid in overlaps:
+                key = str(rid)
+                shield_rule_counts[key] = shield_rule_counts.get(key, 0) + 1
+    return {
+        "result_rows": len(results),
+        "changed": changed,
+        "candidate_matched": matched,
+        "candidate_won": won,
+        "shield_overlap": shield_overlap,
+        "shield_overlap_rules": shield_rule_counts,
+        "headline": (
+            f"{changed} changed; {matched} matched; {shield_overlap} overlap"
+            + (
+                " "
+                + ", ".join(f"{n} {rid}" for rid, n in sorted(shield_rule_counts.items())[:3])
+                if shield_rule_counts
+                else ""
+            )
+        ),
+    }
+
+
+def _preview_row_detail_fields(row: dict[str, Any]) -> dict[str, Any]:
+    tags = row.get("tags")
+    if isinstance(tags, list):
+        tags_s = ", ".join(str(t) for t in tags)
+    elif tags is None:
+        tags_s = ""
+    else:
+        tags_s = str(tags)
+    return {
+        "requester_email": str(row.get("requester_email") or ""),
+        "tags": tags_s,
+        "description": str(row.get("description") or ""),
+    }
 
 
 def preview_rule_on_rows(
@@ -332,41 +452,97 @@ def preview_rule_on_rows(
     candidate: RuleSpec,
     *,
     ticket_ids: tuple[str, ...] = (),
-    limit: int = 10,
+    limit: int = 50,
+    scan_cap: int = 2000,
 ) -> list[dict[str, Any]]:
-    """Sandbox classify with live rules + candidate."""
+    """Sandbox classify with live rules + candidate.
+
+    Each result includes overlap fields:
+    ``evidence_before``, ``evidence_after``, ``candidate_matched``, ``candidate_won``,
+    ``shield_overlap``, ``tier_changed`` (plus legacy ``matched`` / ``before`` / ``after``).
+    """
     specs = live_rules + (candidate,)
-    selected = ticket_ids
+    selected = frozenset(ticket_ids)
+    shield_ids = {r.id for r in live_rules if r.override}
     out: list[dict[str, Any]] = []
+    scanned = 0
+
     for row in rows:
+        if scanned >= scan_cap:
+            break
         tid = str(row.get("id") or "")
         if selected and tid not in selected:
             continue
+        scanned += 1
+
         before = classify_row_with_explanation(row, allow, rule_specs=live_rules)
         after = classify_row_with_explanation(row, allow, rule_specs=specs)
-        if before.tier != after.tier or not selected:
-            if before.tier != after.tier or tid in selected:
-                out.append(
-                    {
-                        "ticket_id": tid,
-                        "subject": row.get("subject") or "",
-                        "before": list(before.tier),
-                        "after": list(after.tier),
-                        "matched": candidate.id in {ev.rule_id for ev in after.evidence},
-                    }
-                )
+        before_ids = _rule_ids(before)
+        after_ids = _rule_ids(after)
+        candidate_matched = candidate.id in after_ids
+        tier_changed = before.tier != after.tier
+        candidate_won = bool(candidate_matched and tier_changed)
+        # Shields that fire on this ticket alongside candidate involvement
+        if candidate_matched or tier_changed:
+            shield_overlap = sorted(shield_ids & (before_ids | after_ids))
+        else:
+            shield_overlap = []
+
+        interesting = (
+            bool(selected)
+            or tier_changed
+            or candidate_matched
+            or bool(shield_overlap and candidate_matched)
+        )
+        if not interesting:
+            continue
+
+        detail = _preview_row_detail_fields(row)
+        out.append(
+            {
+                "ticket_id": tid,
+                "subject": row.get("subject") or "",
+                **detail,
+                "before": list(before.tier),
+                "after": list(after.tier),
+                "matched": candidate_matched,  # legacy alias
+                "candidate_matched": candidate_matched,
+                "candidate_won": candidate_won,
+                "tier_changed": tier_changed,
+                "evidence_before": _evidence_payload(before),
+                "evidence_after": _evidence_payload(after),
+                "shield_overlap": shield_overlap,
+            }
+        )
         if len(out) >= limit:
             break
+
     if not out and rows:
+        # Preserve previous “show something” behavior when nothing interesting found.
         row = rows[0]
         after = classify_row_with_explanation(row, allow, rule_specs=specs)
+        before = classify_row_with_explanation(row, allow, rule_specs=live_rules)
+        before_ids = _rule_ids(before)
+        after_ids = _rule_ids(after)
+        candidate_matched = candidate.id in after_ids
+        tier_changed = before.tier != after.tier
+        detail = _preview_row_detail_fields(row)
         out.append(
             {
                 "ticket_id": str(row.get("id") or ""),
                 "subject": row.get("subject") or "",
-                "before": list(classify_row_with_explanation(row, allow, rule_specs=live_rules).tier),
+                **detail,
+                "before": list(before.tier),
                 "after": list(after.tier),
-                "matched": candidate.id in {ev.rule_id for ev in after.evidence},
+                "matched": candidate_matched,
+                "candidate_matched": candidate_matched,
+                "candidate_won": bool(candidate_matched and tier_changed),
+                "tier_changed": tier_changed,
+                "evidence_before": _evidence_payload(before),
+                "evidence_after": _evidence_payload(after),
+                "shield_overlap": sorted(shield_ids & (before_ids | after_ids))
+                if candidate_matched
+                else [],
             }
         )
     return out

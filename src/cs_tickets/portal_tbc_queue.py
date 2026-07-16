@@ -269,26 +269,6 @@ def tbc_queue_page_html(
       data-can-confirm="{"true" if can_confirm else "false"}"
       data-can-add-allowlist="{"true" if can_add_allowlist else "false"}">
       <div class="tbc-queue-toolbar">
-        <div class="tbc-filter-nl-row">
-          <label class="tbc-filter-field tbc-filter-field--grow">
-            <span class="tbc-filter-label">Review focus (natural language)</span>
-            <input type="text" id="tbc-filter-nl" class="tbc-filter-input" placeholder="e.g. review B2C cancellation; anything contains sherina move under Print" autocomplete="off" />
-          </label>
-          <button type="button" class="btn btn-secondary btn-sm" id="tbc-filter-nl-apply">Apply focus</button>
-          <button type="button" class="btn btn-secondary btn-sm" id="tbc-filter-draft-rule" hidden>Draft rule for filter</button>
-        </div>
-        <p id="tbc-filter-nl-status" class="meta tbc-filter-nl-status" hidden aria-live="polite"></p>
-        <div id="tbc-filter-rule-panel" class="tbc-filter-rule-panel" hidden>
-          <h4>Batch rule draft</h4>
-          <textarea id="tbc-filter-rule-text" class="tbc-rule-input" rows="5"></textarea>
-          <div class="tbc-rule-actions">
-            <button type="button" class="btn btn-secondary btn-sm" id="tbc-filter-rule-compile">Compile</button>
-            <button type="button" class="btn btn-secondary btn-sm" id="tbc-filter-rule-preview" disabled>Preview on focus</button>
-            {"<button type=\"button\" class=\"btn btn-primary btn-sm\" id=\"tbc-filter-rule-confirm\" disabled>Confirm live</button>" if can_confirm else "<span class=\"meta\">Team lead confirms live rules.</span>"}
-          </div>
-          <div id="tbc-filter-rule-review" class="meta tbc-rule-review" hidden></div>
-          <div id="tbc-filter-rule-preview-results" class="tbc-rule-preview-results" hidden></div>
-        </div>
         <div class="tbc-filter-bar" id="tbc-filter-bar">
           <label class="tbc-filter-field">
             <span class="tbc-filter-label">Contains</span>
@@ -307,8 +287,19 @@ def tbc_queue_page_html(
             <input type="text" id="tbc-filter-categories" class="tbc-filter-input" placeholder="e.g. Access Loop, Cancellation, Print" autocomplete="off" />
           </label>
           <button type="button" class="btn btn-secondary btn-sm" id="tbc-filter-clear">Clear</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="tbc-filter-draft-rule" hidden>Draft rule for filter</button>
         </div>
-        <div id="tbc-filter-chips" class="tbc-filter-chips meta" aria-live="polite"></div>
+        <div id="tbc-filter-rule-panel" class="tbc-filter-rule-panel" hidden>
+          <h4>Batch rule draft</h4>
+          <textarea id="tbc-filter-rule-text" class="tbc-rule-input" rows="5"></textarea>
+          <div class="tbc-rule-actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="tbc-filter-rule-compile">Compile</button>
+            <button type="button" class="btn btn-secondary btn-sm" id="tbc-filter-rule-preview" disabled>Preview on focus</button>
+            {"<button type=\"button\" class=\"btn btn-primary btn-sm\" id=\"tbc-filter-rule-confirm\" disabled>Confirm live</button>" if can_confirm else "<span class=\"meta\">Team lead confirms live rules.</span>"}
+          </div>
+          <div id="tbc-filter-rule-review" class="meta tbc-rule-review" hidden></div>
+          <div id="tbc-filter-rule-preview-results" class="tbc-rule-preview-results" hidden></div>
+        </div>
         <div class="tbc-queue-chunk-row">
         <label class="tbc-queue-chunk-label" for="tbc-chunk-size">Chunk size</label>
         <select id="tbc-chunk-size" class="tbc-chunk-size">

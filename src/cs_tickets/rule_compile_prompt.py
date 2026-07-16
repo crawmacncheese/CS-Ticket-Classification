@@ -65,24 +65,54 @@ def allowlist_tier_index(allow: AllowList, *, max_tier4: int = 120) -> str:
 def build_compile_system_prompt(
     allow: AllowList,
     live_rules: tuple[RuleSpec, ...],
+    *,
+    user_message: str = "",
+    taxonomy_excerpt: str | None = None,
 ) -> str:
     corpus = DEFAULT_CORPUS
-    return "\n\n".join(
+    parts = [
+        "You compile natural-language routing rules into strict JSON for a ticket classifier.",
+        "Output ONLY a JSON object: "
+        '{"rule": {...RuleSpec fields...}, "rationale": "...", "warnings": []}',
+        RULE_SPEC_FIELD_DOCS,
+        corpus.precedence,
+        format_few_shots_for_prompt(corpus.few_shots),
+        format_disambiguation_for_prompt(corpus.disambiguation),
+        live_rules_digest(live_rules),
+        allowlist_tier_index(allow),
+    ]
+    if taxonomy_excerpt:
+        parts.append(taxonomy_excerpt)
+    else:
+        # Lazy default: load scoped taxonomy when message provided
+        try:
+            from cs_tickets.taxonomy_requirements import (
+                format_taxonomy_for_compile,
+                infer_scope_from_message,
+                load_taxonomy_requirements,
+            )
+
+            tax = load_taxonomy_requirements()
+            cats, sweeps = infer_scope_from_message(user_message)
+            scoped = tax.sections_for_scope(
+                categories=cats,
+                sweep_ids=sweeps,
+                text_hints=user_message,
+            )
+            parts.append(
+                format_taxonomy_for_compile(tax, scoped=scoped, live_rules=live_rules)
+            )
+        except OSError:
+            pass
+    parts.extend(
         [
-            "You compile natural-language routing rules into strict JSON for a ticket classifier.",
-            "Output ONLY a JSON object: "
-            '{"rule": {...RuleSpec fields...}, "rationale": "...", "warnings": []}',
-            RULE_SPEC_FIELD_DOCS,
-            corpus.precedence,
-            format_few_shots_for_prompt(corpus.few_shots),
-            format_disambiguation_for_prompt(corpus.disambiguation),
-            live_rules_digest(live_rules),
-            allowlist_tier_index(allow),
             "Never invent tiers outside the allow-list. Workbook 5-tuple wins over Gem 4-tier labels.",
             "When the exemplar is manual-review (TBC), the assigned tier is a fallback — "
             "compile the rule toward the category implied by ticket content, never toward TBC.",
+            "Respect Global precedence shields; do not draft a normal-weight rule that fights Stefan / live-chat shields without override.",
         ]
     )
+    return "\n\n".join(parts)
 
 
 def build_compile_user_context(

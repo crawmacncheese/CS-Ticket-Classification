@@ -145,3 +145,7 @@ def test_tier_stats_table_has_selectable_rows() -> None:
     assert "tier-stats-row--selectable" in html
     assert 'data-tier4="L1"' in html
     assert 'data-tier1="B2C"' in html
+    assert "<th>Segment</th>" in html
+    assert "<th>Tickets</th>" in html
+    assert "Tier1_Segment" not in html
+    assert "COUNTA of id" not in html

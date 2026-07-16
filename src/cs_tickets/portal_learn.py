@@ -10,7 +10,15 @@ from cs_tickets.feedback.ids import normalize_ticket_id
 from cs_tickets.feedback.models import RuleProposal, TaxonomyProposal
 from cs_tickets.feedback.parse import LearnParseResult
 from cs_tickets.feedback.promote import ConfirmResult
-from cs_tickets.portal_copy import LEARN_UNDO_LAST_CONFIRM, LEARN_UNDO_NOTE
+from cs_tickets.portal_copy import (
+    LEARN_UNDO_LAST_CONFIRM,
+    LEARN_UNDO_NOTE,
+    TIER_STATS_HEADER_CATEGORY,
+    TIER_STATS_HEADER_COUNT,
+    TIER_STATS_HEADER_GROUP,
+    TIER_STATS_HEADER_SEGMENT,
+    TIER_STATS_HEADER_STREAM,
+)
 from cs_tickets.portal_training import (
     _golden_baseline_hint_html,
     training_changed_rows_html,
@@ -343,11 +351,11 @@ def rule_proposals_table_html(
 ) -> str:
     headers = [
         "When tickets…",
-        "Tier1_Segment",
-        "Tier2_Stream",
-        "Tier3_Cat",
-        "Tier4_Type",
-        "COUNTA of id",
+        TIER_STATS_HEADER_SEGMENT,
+        TIER_STATS_HEADER_STREAM,
+        TIER_STATS_HEADER_GROUP,
+        TIER_STATS_HEADER_CATEGORY,
+        TIER_STATS_HEADER_COUNT,
         "Consistency",
         "Example ticket ids",
     ]
@@ -425,11 +433,11 @@ def taxonomy_proposals_table_html(
     no_op_tuples: frozenset[tuple[str, str, str, str, str]] | None = None,
 ) -> str:
     headers = [
-        "Tier1_Segment",
-        "Tier2_Stream",
-        "Tier3_Cat",
-        "Tier4_Type",
-        "COUNTA of id",
+        TIER_STATS_HEADER_SEGMENT,
+        TIER_STATS_HEADER_STREAM,
+        TIER_STATS_HEADER_GROUP,
+        TIER_STATS_HEADER_CATEGORY,
+        TIER_STATS_HEADER_COUNT,
         "What's new",
         "Example ticket ids",
     ]
@@ -929,11 +937,21 @@ def learn_process_body_html(
     return f"{proposals}\n{tbc_footnote}\n{preview}\n{confirm_bar}\n{scripts}"
 
 
-def learn_revert_footer_html(*, show_revert: bool) -> str:
+def learn_revert_footer_html(
+    *,
+    show_revert: bool,
+    expected_version: int | None = None,
+) -> str:
     if not show_revert:
         return ""
+    version_field = ""
+    if expected_version is not None:
+        version_field = (
+            f'<input type="hidden" name="expected_version" value="{int(expected_version)}" />'
+        )
     return f"""
 <p class="meta learn-revert-note">{LEARN_UNDO_NOTE}</p>
 <form action="/learn/revert" method="post" class="training-revert-form">
+    {version_field}
     <button type="submit" class="btn btn-secondary">{LEARN_UNDO_LAST_CONFIRM}</button>
 </form>""".strip()

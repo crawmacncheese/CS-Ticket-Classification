@@ -50,6 +50,14 @@ from cs_tickets.portal_rules import (
     preview_rule_on_rows,
     rules_editor_html,
     rules_list_html,
+    summarize_preview_results,
+)
+from cs_tickets.consistency_gateway import attach_preview_risk
+from cs_tickets.portal_review_dock import wrap_workbench_with_review_dock
+from cs_tickets.portal_review_chat import (
+    append_review_chat_log,
+    build_review_chat_turn,
+    profile_headline,
 )
 from cs_tickets.rule_compile import compile_rule_message, compile_result_to_api_dict
 from cs_tickets.runtime_config import (
@@ -61,7 +69,6 @@ from cs_tickets.runtime_config import (
 )
 from cs_tickets.drive_upload import (
     DriveUploadResult,
-    drive_runs_folder_url,
     drive_upload_configured,
     try_upload_workbook,
 )
@@ -80,7 +87,6 @@ from cs_tickets.portal_copy import (
     LEARN_PROCESS_BUTTON,
     LEARN_TRY_AGAIN_LABEL,
     LEARN_UPLOAD_ANOTHER_LABEL,
-    NAV_RUN_HISTORY,
     NAV_TBC_TRENDS,
     NEW_UPLOAD_LABEL,
     REFERENCE_CATEGORIES_PAGE_INTRO,
@@ -93,6 +99,7 @@ from cs_tickets.portal_copy import (
     TECHNICAL_DETAILS_BODY,
     TECHNICAL_DETAILS_SUMMARY,
     TICKET_PREVIEW_HEADING,
+    WORKBOOK_SHEETS_HINT,
 )
 from cs_tickets.category_audit_filters import CategoryAuditFilter
 from cs_tickets.category_audit_export import category_audit_slice_csv_bytes
@@ -346,7 +353,7 @@ def _learn_process_page(record: _LearnRecord, upload_id: str) -> str:
         title=REFERENCE_CATEGORIES_PAGE_TITLE,
         active="learn",
         body=page_body,
-        extra_scripts=["/static/training.js?v=5", "/static/ticket_preview.js?v=9"],
+        extra_scripts=["/static/training.js?v=5", "/static/ticket_preview.js?v=13"],
     )
 
 
@@ -380,34 +387,56 @@ def _default_taxonomy_path() -> Path | None:
     return tax if tax.is_file() else None
 
 
-def _classify_technical_details_html() -> str:
+def _classify_technical_details_html(*, include_workbook_hint: bool = False) -> str:
+    workbook = ""
+    if include_workbook_hint:
+        workbook = f'<p class="meta download-hint">{WORKBOOK_SHEETS_HINT}</p>'
     return f"""
     <details class="technical-details">
         <summary>{TECHNICAL_DETAILS_SUMMARY}</summary>
-        <div class="technical-details-body meta">{TECHNICAL_DETAILS_BODY}</div>
+        <div class="technical-details-body meta">
+            {TECHNICAL_DETAILS_BODY}
+            {workbook}
+        </div>
     </details>"""
 
 
 def _classify_run_actions_html(
     run_id: str,
     *,
-    primary: bool = False,
     tbc_pending: int = 0,
 ) -> str:
-    primary_cls = " btn-primary" if primary else " btn-secondary"
-    tbc_btn = ""
+    """Primary CTA: Start manual review when TBC pending; else Download workbook."""
+    download = (
+        f'<a href="/download/{_esc(run_id)}" class="btn btn-primary">'
+        f"{DOWNLOAD_WORKBOOK_LABEL}</a>"
+    )
+    audit = (
+        f'<a href="/run/{_esc(run_id)}/category_audit" class="btn btn-secondary">'
+        f"{CATEGORY_AUDIT_BUTTON}</a>"
+    )
+    upload_another = f'<a href="/" class="btn btn-secondary">{NEW_UPLOAD_LABEL}</a>'
     if tbc_pending > 0:
-        tbc_btn = (
+        primary = (
             f'<a href="/run/{_esc(run_id)}/tbc" class="btn btn-primary">'
-            f"{TBC_QUEUE_BUTTON} ({tbc_pending})</a> "
+            f"{TBC_QUEUE_BUTTON} ({tbc_pending})</a>"
         )
+        download = (
+            f'<a href="/download/{_esc(run_id)}" class="btn btn-secondary">'
+            f"{DOWNLOAD_WORKBOOK_LABEL}</a>"
+        )
+        return f"""
+    <p class="run-actions">
+        {primary}
+        {download}
+        {audit}
+        {upload_another}
+    </p>"""
     return f"""
     <p class="run-actions">
-        {tbc_btn}
-        <a href="/run/{_esc(run_id)}/category_audit" class="btn btn-secondary">{CATEGORY_AUDIT_BUTTON}</a>
-        <a href="/download/{_esc(run_id)}" class="btn{primary_cls}">{DOWNLOAD_WORKBOOK_LABEL}</a>
-        <a href="/" class="btn btn-secondary">{NEW_UPLOAD_LABEL}</a>
-        <a href="{_esc(drive_runs_folder_url())}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">{NAV_RUN_HISTORY}</a>
+        {download}
+        {audit}
+        {upload_another}
     </p>"""
 
 
@@ -434,7 +463,6 @@ def _run_results_body_html(
         filter_note = '<p class="meta run-filter-note">This run included only tickets with a bad CSAT rating.</p>'
     run_actions = _classify_run_actions_html(
         run_id,
-        primary=True,
         tbc_pending=pending,
     )
     return f"""
@@ -444,7 +472,6 @@ def _run_results_body_html(
     {filter_note}
     {run_actions}
     {drive_html}
-    <p class="download-hint meta">Workbook includes sheets <strong>Run metadata</strong>, <strong>Tickets</strong> (full rows), and <strong>Tier breakdown</strong> (category counts).</p>
 
     <h2 class="section-header">{CATEGORY_BREAKDOWN_HEADING}</h2>
     <p class="meta">{CATEGORY_BREAKDOWN_META}</p>
@@ -453,7 +480,7 @@ def _run_results_body_html(
     <h2 class="section-header">{TICKET_PREVIEW_HEADING}</h2>
     <div id="ticket-preview">{preview_block}</div>
 
-    {_classify_technical_details_html()}
+    {_classify_technical_details_html(include_workbook_hint=True)}
     """
 
 
@@ -567,12 +594,16 @@ async def run_upload(
                 f"Added to <a href=\"/dashboard\">{NAV_TBC_TRENDS}</a>: "
                 f"{snap_rows} tickets ({snap_tbc} manual review, {snap_pct}).</p>"
             )
-        body = trends_html + _run_results_body_html(run_id, record)
+        body = _with_review_dock(
+            trends_html + _run_results_body_html(run_id, record),
+            run_id=run_id,
+        )
         return portal_page_html(
             title="Categorization results",
             active="categorize",
             body=body,
-            extra_scripts=["/static/ticket_preview.js?v=9"],
+            wide=True,
+            extra_scripts=_workbench_page_scripts("/static/ticket_preview.js?v=15"),
         )
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -613,6 +644,23 @@ def _get_run_record(run_id: str) -> _RunRecord:
     return record
 
 
+def _workbench_page_scripts(*page_scripts: str) -> list[str]:
+    """Page scripts plus Review chat dock (rules.js orchestrator + collapse UI)."""
+    return [
+        *page_scripts,
+        "/static/rules.js?v=22",
+        "/static/review_dock.js?v=3",
+    ]
+
+
+def _with_review_dock(body: str, *, run_id: str = "") -> str:
+    return wrap_workbench_with_review_dock(
+        body,
+        run_id=run_id,
+        can_confirm=portal_allow_confirm(),
+    )
+
+
 @app.get("/run/{run_id}/results", response_class=HTMLResponse)
 def run_results(run_id: str, reclassified: str | None = None) -> str:
     record = _get_run_record(run_id)
@@ -624,12 +672,16 @@ def run_results(run_id: str, reclassified: str | None = None) -> str:
             f"Run re-classified with current live rules. "
             f"{counts.tbc} ticket{'s' if counts.tbc != 1 else ''} need manual review.</p>"
         )
-    body = _run_results_body_html(run_id, record, status_banner=banner)
+    body = _with_review_dock(
+        _run_results_body_html(run_id, record, status_banner=banner),
+        run_id=run_id,
+    )
     return portal_page_html(
         title="Categorization results",
         active="categorize",
         body=body,
-        extra_scripts=["/static/ticket_preview.js?v=9"],
+        wide=True,
+        extra_scripts=_workbench_page_scripts("/static/ticket_preview.js?v=15"),
     )
 
 
@@ -664,21 +716,25 @@ def run_category_audit_page(
         audit_filter,
         show=bool(reclassified),
     )
-    body = category_audit_page_html(
+    body = _with_review_dock(
+        category_audit_page_html(
+            run_id=run_id,
+            slice_rows=slice_rows,
+            chunk_rows=chunk_rows,
+            filt=audit_filter,
+            stats=stats,
+            offset=offset,
+            limit=limit,
+            reclassify_banner=reclassify_banner,
+        ),
         run_id=run_id,
-        slice_rows=slice_rows,
-        chunk_rows=chunk_rows,
-        filt=audit_filter,
-        stats=stats,
-        offset=offset,
-        limit=limit,
-        reclassify_banner=reclassify_banner,
     )
     return portal_page_html(
         title="Category audit",
         active="categorize",
         body=body,
-        extra_scripts=["/static/category_audit.js?v=4"],
+        wide=True,
+        extra_scripts=_workbench_page_scripts("/static/category_audit.js?v=7"),
     )
 
 
@@ -803,6 +859,62 @@ def run_category_audit_parse_focus(run_id: str, body: dict = Body(...)) -> JSONR
     return JSONResponse(payload)
 
 
+@app.get("/run/{run_id}/review_chat")
+def run_review_chat_redirect(
+    run_id: str,
+    ticket_id: str | None = None,
+    prefill: str | None = None,
+) -> RedirectResponse:
+    """Convenience entry: open /rules chat in orchestration mode for this run."""
+    _get_run_record(run_id)
+    qs = f"run_id={run_id}&mode=orch"
+    if ticket_id:
+        qs += f"&ticket_id={ticket_id}"
+    if prefill:
+        from urllib.parse import quote
+
+        qs += f"&prefill={quote(prefill)}"
+    return RedirectResponse(url=f"/rules/new?{qs}", status_code=302)
+
+
+@app.post("/run/{run_id}/review_chat/turn")
+def run_review_chat_turn(run_id: str, body: dict = Body(...)) -> JSONResponse:
+    """Review-chat focus turn: validated structured filter (LLM-first when configured)."""
+    record = _get_run_record(run_id)
+    text = str(body.get("text") or "").strip()
+    allow = load_runtime_allowlist(_repo_root())
+    payload = build_review_chat_turn(
+        record.rows,
+        focus_nl=text,
+        allow=allow,
+        tbc_reasons=record.tbc_reasons,
+    )
+    if payload.get("ok") and isinstance(payload.get("profile"), dict):
+        payload["headline"] = profile_headline(payload["profile"])
+    # Optional session MD append
+    session_md = body.get("session_md")
+    if session_md and payload.get("ok"):
+        log_result = append_review_chat_log(
+            session_md,
+            action="PROFILE_TURN",
+            result=str(payload.get("headline") or text)[:240],
+        )
+        payload["log"] = log_result
+    return JSONResponse(payload)
+
+
+@app.post("/run/{run_id}/review_chat/log")
+def run_review_chat_log(run_id: str, body: dict = Body(...)) -> JSONResponse:
+    """Append one execution-log row to optional session MD path."""
+    _get_run_record(run_id)
+    action = str(body.get("action") or "CHAT").strip() or "CHAT"
+    result = str(body.get("result") or "").strip()
+    session_md = body.get("session_md")
+    return JSONResponse(
+        append_review_chat_log(session_md, action=action, result=result)
+    )
+
+
 @app.post("/run/{run_id}/run_parse_focus")
 def run_parse_focus(run_id: str, body: dict = Body(...)) -> JSONResponse:
     """Parse natural-language focus for filtering the full run preview (not only TBC)."""
@@ -886,21 +998,25 @@ def run_tbc_queue_page(run_id: str, reclassified: str | None = None) -> str:
         banner = (
             '<p class="run-summary" role="status" id="tbc-reclassify-banner" hidden></p>'
         )
-    body = tbc_queue_page_html(
+    body = _with_review_dock(
+        tbc_queue_page_html(
+            run_id=run_id,
+            total_pending=pending,
+            total_tbc=counts.tbc,
+            reclassify_banner=banner,
+            auto_suggest=tbc_auto_suggest_enabled(),
+            llm_available=compile_llm_configured(),
+            can_confirm=portal_allow_confirm(),
+            can_add_allowlist=portal_allow_confirm() and training_available(_repo_root()),
+        ),
         run_id=run_id,
-        total_pending=pending,
-        total_tbc=counts.tbc,
-        reclassify_banner=banner,
-        auto_suggest=tbc_auto_suggest_enabled(),
-        llm_available=compile_llm_configured(),
-        can_confirm=portal_allow_confirm(),
-        can_add_allowlist=portal_allow_confirm() and training_available(_repo_root()),
     )
     return portal_page_html(
         title=TBC_QUEUE_PAGE_TITLE,
         active="categorize",
         body=body,
-        extra_scripts=["/static/tbc_queue.js?v=9"],
+        wide=True,
+        extra_scripts=_workbench_page_scripts("/static/tbc_queue.js?v=14"),
     )
 
 
@@ -1268,7 +1384,11 @@ def dashboard() -> str:
 def learn_index() -> str:
     root = _repo_root()
     live = ensure_live_bootstrapped(root)
-    revert_footer = learn_revert_footer_html(show_revert=has_revertable_live_backup(live))
+    show = has_revertable_live_backup(live)
+    revert_footer = learn_revert_footer_html(
+        show_revert=show,
+        expected_version=current_config_version(root) if show else None,
+    )
     body = f"""
     <div class="upload-intro">
         <h1 class="page-header">{REFERENCE_CATEGORIES_PAGE_TITLE}</h1>
@@ -1472,7 +1592,11 @@ async def learn_confirm(
         shutil.rmtree(record.temp_dir, ignore_errors=True)
 
     live_after = ensure_live_bootstrapped(repo_root)
-    revert_footer = learn_revert_footer_html(show_revert=has_revertable_live_backup(live_after))
+    show = has_revertable_live_backup(live_after)
+    revert_footer = learn_revert_footer_html(
+        show_revert=show,
+        expected_version=confirm_result.config_version_after if show else None,
+    )
     body = f"""
     {learn_proposals_html(
         record.result,
@@ -1504,16 +1628,26 @@ async def learn_cancel(upload_id: str = Form(...)) -> RedirectResponse:
 
 
 @app.post("/learn/revert", response_class=HTMLResponse)
-async def learn_revert() -> str:
+async def learn_revert(expected_version: str | None = Form(None)) -> str:
     repo_root = _repo_root()
     live = ensure_live_bootstrapped(repo_root)
+    expected: int | None = None
+    if expected_version is not None and str(expected_version).strip():
+        try:
+            expected = int(str(expected_version).strip())
+        except ValueError:
+            return _learn_error_html("expected_version must be an integer.")
     try:
-        restored_version = revert_latest_live_backup(live)
+        restored_version = revert_latest_live_backup(live, expected_version=expected)
     except PromoteError as exc:
         return _learn_error_html(str(exc))
     try_sync_live_to_drive(live, backup_version=restored_version)
     _sync_runtime_classifier(repo_root)
-    revert_footer = learn_revert_footer_html(show_revert=has_revertable_live_backup(live))
+    cur = current_config_version(repo_root)
+    revert_footer = learn_revert_footer_html(
+        show_revert=has_revertable_live_backup(live),
+        expected_version=cur if has_revertable_live_backup(live) else None,
+    )
     body = f"""
     <h1 class="page-header">{REFERENCE_CATEGORIES_PAGE_TITLE}</h1>
     <p class="run-summary" role="status">Restored live config to version {restored_version}.</p>
@@ -1570,7 +1704,16 @@ def rules_index(
     banner = ""
     if confirmed:
         ver = version or str(current_config_version(repo_root))
-        banner = f'<p class="run-summary" role="status">Rule confirmed. Live config version {_esc(ver)}.</p>'
+        live = ensure_live_bootstrapped(repo_root)
+        show = has_revertable_live_backup(live)
+        revert = learn_revert_footer_html(
+            show_revert=show,
+            expected_version=int(ver) if show and str(ver).isdigit() else None,
+        )
+        banner = (
+            f'<p class="run-summary" role="status">Rule confirmed. Live config version {_esc(ver)}.</p>'
+            f"{revert}"
+        )
     can_confirm = portal_allow_confirm()
     filter_bar = rules_filter_bar_html(
         q=str(q or ""),
@@ -1591,11 +1734,13 @@ def rules_index(
     {filter_bar}
     {rules_list_html(filtered, config_version=current_config_version(repo_root), can_confirm=can_confirm)}
     """
+    body = _with_review_dock(body)
     return portal_page_html(
         title=RULES_PAGE_TITLE,
         active="rules",
         body=body,
-        extra_scripts=["/static/rules.js?v=9", "/static/training.js?v=5"],
+        wide=True,
+        extra_scripts=_workbench_page_scripts("/static/training.js?v=5"),
     )
 
 
@@ -1604,16 +1749,19 @@ def rules_new(
     run_id: str | None = None,
     ticket_id: str | None = None,
     rule_id: str | None = None,
+    mode: str | None = None,
+    prefill: str | None = None,
 ) -> str:
-    prefill = ""
+    prefill_text = (prefill or "").strip()
     initial_rule = None
     repo_root = _repo_root()
+    orch = (mode or "").strip().lower() in ("orch", "orchestration", "audit")
     if rule_id:
         for rule in load_runtime_rule_specs(repo_root, include_disabled=True):
             if rule.id == rule_id:
                 initial_rule = rule
                 break
-    if run_id and ticket_id:
+    if run_id and ticket_id and not prefill_text:
         row = _rules_run_row(run_id, ticket_id)
         if row:
             allow = _default_allowlist()
@@ -1623,7 +1771,7 @@ def rules_new(
             if explain.get("evidence"):
                 top_ev = str(explain["evidence"][0].get("rule_id") or "")
             tier_hint = " → ".join(explain.get("tier") or [])[:80]
-            prefill = build_rule_prefill(
+            prefill_text = build_rule_prefill(
                 ticket_id=ticket_id,
                 subject=str(row.get("subject") or ""),
                 suggested_tier=tier_hint,
@@ -1632,23 +1780,26 @@ def rules_new(
                 row=row,
                 explain=explain,
             )
+    if run_id and not ticket_id:
+        orch = True
     can_confirm = portal_allow_confirm()
     body = f"""
     <h1 class="page-header">{RULES_PAGE_TITLE}</h1>
     <p class="links"><a href="/rules" class="btn btn-secondary">← All rules</a></p>
     {rules_editor_html(
-        prefill=prefill,
+        prefill=prefill_text,
         run_id=run_id or "",
         ticket_id=ticket_id or "",
         initial_rule=initial_rule,
         can_confirm=can_confirm,
+        orchestration=orch,
     )}
     """
     return portal_page_html(
         title=RULES_PAGE_TITLE,
         active="rules",
         body=body,
-        extra_scripts=["/static/rules.js?v=9"],
+        extra_scripts=["/static/rules.js?v=22"],
     )
 
 
@@ -1792,7 +1943,14 @@ def rules_preview(body: dict = Body(...)) -> JSONResponse:
         candidate,
         ticket_ids=ticket_ids,
     )
-    return JSONResponse({"ok": True, "results": results})
+    return JSONResponse(
+        {
+            "ok": True,
+            "results": results,
+            "summary": attach_preview_risk(summarize_preview_results(results)),
+            "rule_id": candidate.id,
+        }
+    )
 
 
 @app.post("/rules/preview_upload")
@@ -1858,6 +2016,7 @@ async def rules_preview_upload(
             {
                 "ok": True,
                 "results": results,
+                "summary": attach_preview_risk(summarize_preview_results(results)),
                 "processed_rows": len(rows),
                 "warning_count": warns,
                 "rule_id": candidate.id,

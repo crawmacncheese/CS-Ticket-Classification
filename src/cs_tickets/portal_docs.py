@@ -1,4 +1,8 @@
-"""Collapsed pipeline documentation for the local test portal."""
+"""Collapsed pipeline documentation for the local test portal.
+
+See docs/design.md §6.4 for the documentation maintenance map:
+README/HANDOFF (canonical) → portal_copy.TECHNICAL_DETAILS_* (short UI) → this module (diagram).
+"""
 
 from __future__ import annotations
 

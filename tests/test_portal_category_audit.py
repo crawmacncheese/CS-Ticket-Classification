@@ -50,10 +50,11 @@ def test_category_audit_page_and_filters(repo_root: Path) -> None:
     page = client.get(f"/run/{run_id}/category_audit")
     assert page.status_code == 200
     assert "category-audit-app" in page.text
-    assert "category_audit.js?v=4" in page.text
+    assert "category_audit.js?v=7" in page.text
     assert "Slice checks" not in page.text
     assert "Full content" in page.text
-    assert "Review focus (natural language)" in page.text
+    assert "Review focus (natural language)" not in page.text
+    assert 'id="review-dock"' in page.text
     assert "category-audit-reclassify-btn" in page.text
     assert "category-audit-sweep-rule-compile" not in page.text
 

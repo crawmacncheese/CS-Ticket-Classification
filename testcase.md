@@ -1,6 +1,6 @@
 # Test plan: Allowlist Training resolves prior TBCs
 
-Related docs: [`allowlistupdatefeature.md`](./allowlistupdatefeature.md), [`errornotes.md`](./errornotes.md), [`docs/plans/2026-06-06-allowlist-training-feature.md`](./docs/plans/2026-06-06-allowlist-training-feature.md), [`docs/plans/2026-06-09-allowlist-testing-architecture.md`](./docs/plans/2026-06-09-allowlist-testing-architecture.md).
+Related docs: [`allowlistupdatefeature.md`](./allowlistupdatefeature.md), [`docs/plans/2026-06-06-allowlist-training-feature.md`](./docs/plans/2026-06-06-allowlist-training-feature.md), [`docs/plans/2026-06-09-allowlist-testing-architecture.md`](./docs/plans/2026-06-09-allowlist-testing-architecture.md), [`docs/HANDOFF.md`](./docs/HANDOFF.md).
 
 **Goal:** Verify that expanding the allow-list via Training can move tickets from **TBC (Manual Review)** to a specific tier when classifier rules already match the ticket but the target 5-tuple was missing from the allow-list.
 

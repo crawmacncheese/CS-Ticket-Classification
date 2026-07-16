@@ -74,8 +74,10 @@ def test_rule_table_uses_stats_table_and_cs_headers() -> None:
     html = rule_proposals_table_html((p,))
     assert 'class="stats-table"' in html
     assert "When tickets…" in html
-    assert "Tier1_Segment" in html
-    assert "COUNTA of id" in html
+    assert "Segment" in html
+    assert "Tickets" in html
+    assert "Tier1_Segment" not in html
+    assert "COUNTA of id" not in html
     assert "Tagged with: login_issue" in html
     assert "Login Issue" in html
     assert "any_tags" not in html

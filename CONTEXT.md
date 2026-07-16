@@ -2,6 +2,8 @@
 
 Domain terms for this project. Implementation details belong in code and design docs, not here.
 
+**New maintainers:** start with [docs/HANDOFF.md](docs/HANDOFF.md) and [docs/README.md](docs/README.md).
+
 ## Code preservation
 
 When adding features or fixing bugs, **preserve as much of the original code as possible**. Prefer adding new functions over rewriting existing ones. If modifying an existing function is clearly better, document the justification in the implementation notes for that change (e.g. `docs/plans/*-notes.md`).

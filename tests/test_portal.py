@@ -68,7 +68,9 @@ def test_run_upload_ndjson(repo_root: Path) -> None:
     assert "portal-topnav" in r.text
     assert "Download Excel Workbook" in r.text
     assert "Upload Another File" in r.text
-    assert "Run History" in r.text
+    assert "Start manual review" in r.text
+    assert "Run History" in r.text  # top nav only
+    assert r.text.count("Run History") == 1
     assert "drive.google.com/drive/folders/" in r.text
     assert "Results By Category" in r.text
     assert "/static/cs_tickets_theme.css" in r.text
@@ -80,13 +82,31 @@ def test_run_upload_ndjson(repo_root: Path) -> None:
     assert 'id="classify-ticket-preview-data"' in r.text
     assert "preview-col-detail' hidden" in r.text or 'preview-col-detail" hidden' in r.text
     assert "ticket-preview-category-filter" in r.text
-    assert "ticket-preview-subject-filter" in r.text
+    assert "ticket-preview-search-filter" in r.text
+    assert "ticket-preview-advanced" in r.text
+    assert "ticket-preview-subject-filter" not in r.text
+    assert "ticket-preview-contains-filter" not in r.text
+    assert "Review focus (natural language)" not in r.text
     assert 'id="ticket-preview"' in r.text
     assert "data-run-id=" in r.text
     assert "tier-stats-row--selectable" in r.text
     assert '"categories"' in r.text
     assert '"category_rows"' in r.text
+    assert 'id="workbench-layout"' in r.text
+    assert 'data-dock-collapsed="true"' in r.text
+    assert 'id="review-dock"' in r.text
+    assert 'id="review-dock-expand"' in r.text
+    assert "Segment</th>" in r.text
+    assert "Tickets</th>" in r.text
+    assert "Tier1_Segment</th>" not in r.text
+    assert "COUNTA of id</th>" not in r.text
+    assert "portal-main--wide" in r.text
     assert "readme-doc" not in r.text
+    # Run History must not appear as an action button in .run-actions
+    assert "run-actions" in r.text
+    actions_start = r.text.index('class="run-actions"')
+    actions_end = r.text.index("</p>", actions_start)
+    assert "Run History" not in r.text[actions_start:actions_end]
     run_id = next(iter(portal_app._RUNS))
     assert f'/download/{run_id}"' in r.text
 

@@ -9,10 +9,14 @@ from cs_tickets.portal_copy import (
     CATEGORY_AUDIT_OPEN_SLICE,
     CATEGORY_FILTER_ALL,
     CATEGORY_FILTER_LABEL,
+    CATEGORY_FOCUS_LABEL,
+    CATEGORY_FOCUS_PLACEHOLDER,
+    SEARCH_TICKETS_LABEL,
+    SEARCH_TICKETS_PLACEHOLDER,
+    SEGMENT_FILTER_LABEL,
     SHOW_TICKET_PREVIEW_DETAILS_LABEL,
     SHOW_TICKET_PREVIEW_TBC_ONLY_LABEL,
-    SUBJECT_FILTER_LABEL,
-    TAG_FILTER_LABEL,
+    TICKET_PREVIEW_ADVANCED_SUMMARY,
     TICKET_PREVIEW_CAP_META,
     TICKET_PREVIEW_CATEGORY_FILTER_META,
     TICKET_PREVIEW_CATEGORY_FILTER_META_FULL,
@@ -337,52 +341,40 @@ def ticket_preview_html(
     tbc_only_id = f"{table_id}-show-tbc-only"
     detail_pane_id = f"{table_id}-detail"
     category_id = f"{table_id}-category-filter"
-    subject_id = f"{table_id}-subject-filter"
-    tag_id = f"{table_id}-tag-filter"
+    search_id = f"{table_id}-search-filter"
 
     category_controls = ""
     if mode == "classify" and categories:
         category_controls = f"""
-    <div class="tbc-filter-nl-row ticket-preview-nl-row">
-      <label class="tbc-filter-field tbc-filter-field--grow">
-        <span class="tbc-filter-label">Review focus (natural language)</span>
-        <input type="text" class="tbc-filter-input ticket-preview-nl-input"
-          placeholder="e.g. review B2C cancellation; anything contains rosetta"
-          autocomplete="off">
-      </label>
-      <button type="button" class="btn btn-secondary btn-sm ticket-preview-nl-apply">Apply focus</button>
-    </div>
-    <p class="meta tbc-filter-nl-status ticket-preview-nl-status" hidden aria-live="polite"></p>
-    <label class="filter-option ticket-preview-filter" for="{_esc(category_id)}">
-      {_esc(CATEGORY_FILTER_LABEL)}
-      <select id="{_esc(category_id)}" class="ticket-preview-category-filter">
-        {_category_select_options(categories)}
-      </select>
+    <label class="filter-option ticket-preview-filter" for="{_esc(search_id)}">
+      {_esc(SEARCH_TICKETS_LABEL)}
+      <input type="search" id="{_esc(search_id)}" class="ticket-preview-search-filter"
+        autocomplete="off" placeholder="{_esc(SEARCH_TICKETS_PLACEHOLDER)}">
     </label>
     <label class="filter-option ticket-preview-filter">
-      Segment
+      {_esc(SEGMENT_FILTER_LABEL)}
       <select class="ticket-preview-segment-filter">
         <option value="">All segments</option>
         <option value="B2C">B2C</option>
         <option value="B2B">B2B</option>
       </select>
     </label>
-    <label class="filter-option ticket-preview-filter">
-      Contains
-      <input type="search" class="ticket-preview-contains-filter" autocomplete="off" placeholder="subject, body, tags">
+    <label class="filter-option ticket-preview-filter" for="{_esc(category_id)}">
+      {_esc(CATEGORY_FILTER_LABEL)}
+      <select id="{_esc(category_id)}" class="ticket-preview-category-filter">
+        {_category_select_options(categories)}
+      </select>
     </label>
-    <label class="filter-option ticket-preview-filter">
-      Category focus
-      <input type="search" class="ticket-preview-category-focus-filter" autocomplete="off" placeholder="keywords (comma-separated)">
-    </label>
-    <label class="filter-option ticket-preview-filter" for="{_esc(subject_id)}">
-      {_esc(SUBJECT_FILTER_LABEL)}
-      <input type="search" id="{_esc(subject_id)}" class="ticket-preview-subject-filter" autocomplete="off">
-    </label>
-    <label class="filter-option ticket-preview-filter" for="{_esc(tag_id)}">
-      {_esc(TAG_FILTER_LABEL)}
-      <input type="search" id="{_esc(tag_id)}" class="ticket-preview-tag-filter" autocomplete="off">
-    </label>"""
+    <details class="ticket-preview-advanced">
+      <summary>{_esc(TICKET_PREVIEW_ADVANCED_SUMMARY)}</summary>
+      <div class="ticket-preview-advanced-body">
+        <label class="filter-option ticket-preview-filter">
+          {_esc(CATEGORY_FOCUS_LABEL)}
+          <input type="search" class="ticket-preview-category-focus-filter" autocomplete="off"
+            placeholder="{_esc(CATEGORY_FOCUS_PLACEHOLDER)}">
+        </label>
+      </div>
+    </details>"""
 
     run_id_attr = f' data-run-id="{_esc(run_id)}"' if run_id else ""
 

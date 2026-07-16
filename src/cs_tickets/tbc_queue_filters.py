@@ -106,7 +106,12 @@ def row_matches_tbc_filter(
             return False
     if filt.tbc_reason:
         code = str(explain.get("tbc_reason") or "")
-        if code != filt.tbc_reason:
+        want = filt.tbc_reason
+        if want.startswith("!"):
+            excluded = want[1:]
+            if code == excluded:
+                return False
+        elif code != want:
             return False
     return True
 

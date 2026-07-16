@@ -2,9 +2,11 @@
 
 **System:** `cs-tickets` Python package  
 **Version:** 0.1.0  
-**Last updated:** 2026-05-19
+**Last updated:** 2026-07-16
 
 This document describes how the pipeline is built, how classification works, and how components deploy. For product goals and metrics, see [prd.md](./prd.md).
+
+**Agent Skills / Review chat framework** (orchestration, atomic skills, Consistency Gateway): see [architecture/agent-skills-framework.md](./architecture/agent-skills-framework.md).
 
 ---
 
@@ -65,7 +67,9 @@ flowchart LR
 | **Orchestration** | `pipeline.py` | `iter_master_rows(ndjson, allow, bad_satisfaction_only=…)` |
 | **CSAT filter** | `satisfaction.py` | Parse Zendesk `satisfaction_rating`; `has_bad_satisfaction_rating()` |
 | **CLI** | `cli.py`, `__main__.py` | Typer entry `cs-tickets-pipeline` |
-| **Portal** | `portal_app.py`, `portal_stats.py`, `portal_workbook.py`, `portal_trends.py` | HTTP upload, HTML stats, openpyxl XLSX, TBC trends dashboard |
+| **Portal** | `portal_app.py`, `portal_*` modules | HTTP upload, Learn, Rules, audit, TBC queue, review chat, XLSX, trends |
+| **Skills / LLM** | `rule_compile.py`, `consistency_gateway.py`, `session_profile.py` | Rule drafting, validation, profiling (not on classify hot path) |
+| **Runtime config** | `runtime_config.py`, `live_config.py`, `drive_live_config.py` | `runs/live/` bootstrap, version, Drive sync |
 | **TBC trends** | `tbc_trends.py`, `tools/tbc_trend_snapshot.py`, `tools/tbc_trend_report.py` | SQLite snapshots, rollups, portal read model |
 | **Tooling** | `tools/audit_classifier.py` | Offline TBC / unreachable-tier reports |
 | **Tests** | `tests/*` | Unit and integration coverage |
@@ -208,14 +212,18 @@ Training preview also reports margin-loss and below-threshold counts per allow-l
 
 ### 6.1 Routes
 
-| Method | Path | Behavior |
-|--------|------|----------|
-| GET | `/` | Upload form + collapsed documentation |
-| POST | `/run` | Multipart NDJSON → in-memory run store → result HTML; optional `bad_satisfaction_only` checkbox |
-| GET | `/download/{run_id}` | XLSX attachment |
-| GET | `/dashboard` | TBC trend dashboard (SQLite rollups); empty state when DB missing |
-| GET | `/health` | `ok` for probes |
-| GET | `/static/*` | Theme CSS |
+See [HANDOFF.md §6 Portal route map](./HANDOFF.md#6-portal-route-map) for the full list. Summary:
+
+| Area | Key paths |
+|------|-----------|
+| Classify | `GET /`, `POST /run`, `GET /run/{id}/results`, `GET /download/{id}` |
+| Category audit | `GET /run/{id}/category_audit`, sweeps, export, parse focus |
+| TBC | `GET /run/{id}/tbc`, `GET /run/{id}/tbc_queue`, draft rule, reclassify |
+| Ticket detail | `GET /run/{id}/ticket/{ticket_id}`, `GET …/explain/{ticket_id}`, overrides |
+| Review chat | `GET/POST /run/{id}/review_chat/*` |
+| Rules | `GET /rules`, `GET /rules/new`, `POST /rules/compile`, preview, confirm |
+| Learn | `GET/POST /learn/*` (process, preview, confirm, revert) |
+| Ops | `GET /health`, `GET /dashboard`, `GET /static/*` |
 
 ### 6.2 Run lifecycle
 
@@ -230,7 +238,18 @@ Training preview also reports margin-loss and below-threshold counts per allow-l
 
 ### 6.4 Documentation in UI
 
-Footer HTML is **embedded in `portal_app.py`** (mirrors README sections: pipeline Mermaid, allow-list, scoring, module table). Update both when changing operator-facing docs.
+Operator-facing docs are split intentionally — avoid duplicating long prose in HTML:
+
+| Source | Location | Content |
+|--------|----------|---------|
+| **Canonical long-form** | [README.md](../README.md), [HANDOFF.md](./HANDOFF.md) | Full pipeline, setup, maintenance |
+| **Collapsed portal copy** | `portal_copy.py` → `TECHNICAL_DETAILS_BODY` | Short scoring / allow-list summary on classify pages |
+| **Pipeline diagram** | `portal_docs.py` → `pipeline_docs_html()` | Mermaid diagram in `<details>` |
+| **API routes** | [api-reference.md](./api-reference.md) | HTTP reference for integrators |
+
+**Maintenance rule:** When changing scoring thresholds, allow-list behaviour, or operator workflows, update README and HANDOFF first, then sync the short `TECHNICAL_DETAILS_BODY` in `portal_copy.py` if analyst-visible text changed. Do not embed new long docs in `portal_app.py`.
+
+Future improvement: generate collapsed copy from a single markdown fragment (not implemented).
 
 ### 6.5 TBC trends dashboard
 
@@ -372,4 +391,8 @@ Report: row count, TBC %, top tiers, top TBC tags/subjects, unreachable allow-li
 
 - [prd.md](./prd.md) — requirements, metrics, phases
 - [README.md](../README.md) — developer quickstart
+- [HANDOFF.md](./HANDOFF.md) — maintainer onboarding
+- [flows.md](./flows.md) — Mermaid diagrams for classify, portal, Learn, Drive, deploy
+- [configuration.md](./configuration.md) — environment variables
+- [architecture/agent-skills-framework.md](./architecture/agent-skills-framework.md) — Review chat and skills
 - [plans/2026-05-14-tier-classifier-improvements.md](./plans/2026-05-14-tier-classifier-improvements.md) — rule batches and audit baselines

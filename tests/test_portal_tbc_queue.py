@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from cs_tickets import portal_app
 from cs_tickets.portal_app import app
+from cs_tickets.portal_copy import TBC_QUEUE_BUTTON
 from cs_tickets.portal_stats import is_manual_review_row
 
 
@@ -33,7 +34,7 @@ def test_run_results_shows_tbc_queue_link_when_tbc(repo_root: Path) -> None:
     resp = client.get(f"/run/{run_id}/results")
     assert resp.status_code == 200
     if tbc_count:
-        assert "Review manual review queue" in resp.text
+        assert TBC_QUEUE_BUTTON in resp.text
         assert f'/run/{run_id}/tbc"' in resp.text
 
 
@@ -44,9 +45,13 @@ def test_tbc_queue_page_and_json(repo_root: Path) -> None:
     assert page.status_code == 200
     assert "tbc-queue-app" in page.text
     assert "tbc_queue.js?v=" in page.text
-    assert "Review focus" in page.text
+    assert "Review focus" not in page.text
+    assert "Quick focus" not in page.text
+    assert "tbc-filter-nl" not in page.text
+    assert "tbc-filter-chips" not in page.text
     assert "Contains" in page.text
     assert "Category focus" in page.text
+    assert "Draft rule for filter" in page.text
     assert "Skip chunk" in page.text
     assert "Finish → run results" in page.text
 

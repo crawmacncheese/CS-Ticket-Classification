@@ -22,6 +22,56 @@ def test_parse_contains_and_move_to_print() -> None:
     assert "Print" in result.filter.categories or result.rule_target.lower().startswith("print")
 
 
+def test_parse_show_contested_maps_to_lost_margin() -> None:
+    allow = AllowList(tuples=frozenset())
+    result = parse_review_focus_deterministic("show contested", allow)
+    assert result.ok
+    assert result.filter.tbc_reason == "lost_margin"
+    assert result.filter.active
+
+
+def test_parse_show_not_contested_excludes_lost_margin() -> None:
+    allow = AllowList(tuples=frozenset())
+    result = parse_review_focus_deterministic("show not contested", allow)
+    assert result.ok
+    assert result.filter.tbc_reason == "!lost_margin"
+    assert result.filter.active
+
+
+def test_resolve_tbc_reason_alias_variants() -> None:
+    from cs_tickets.tbc_filter_nl import resolve_tbc_reason_alias
+
+    assert resolve_tbc_reason_alias("weak signal") == "below_threshold"
+    assert resolve_tbc_reason_alias("no rules matched") == "zero_candidate"
+    assert resolve_tbc_reason_alias("without match") == "zero_candidate"
+    assert resolve_tbc_reason_alias("no matches") == "zero_candidate"
+    assert resolve_tbc_reason_alias("unmatched") == "zero_candidate"
+    assert resolve_tbc_reason_alias("rules blocked") == "allowlist_filtered"
+    assert resolve_tbc_reason_alias("not contested") == "!lost_margin"
+    assert resolve_tbc_reason_alias("gsdfsaf") == ""
+
+
+def test_parse_without_match_tbc_is_zero_candidate_not_mismatch_categories() -> None:
+    """'match' must not fuzzy-hit allow-list labels like Price Mismatch."""
+    allow = AllowList(
+        tuples=frozenset(
+            {
+                ("B2C", "Complaint", "Billing", "Offer vs Reality Mismatch", "N/A"),
+                ("B2C", "Complaint", "Billing", "Price Mismatch", "N/A"),
+                ("B2C", "Service Task", "Other", "TBC", "N/A"),
+            }
+        )
+    )
+    result = parse_review_focus_deterministic(
+        "show tickets without match [tbc]",
+        allow,
+    )
+    assert result.ok
+    assert result.filter.tbc_reason == "zero_candidate"
+    assert result.filter.categories == ()
+    assert "mismatch" not in " ".join(result.filter.categories).lower()
+
+
 def test_parse_b2c_category_list() -> None:
     allow = AllowList(
         tuples=frozenset(

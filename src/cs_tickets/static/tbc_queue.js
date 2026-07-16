@@ -240,10 +240,6 @@
     var filterTier1El = document.getElementById("tbc-filter-tier1");
     var filterCategoriesEl = document.getElementById("tbc-filter-categories");
     var filterClearBtn = document.getElementById("tbc-filter-clear");
-    var filterChipsEl = document.getElementById("tbc-filter-chips");
-    var filterNlEl = document.getElementById("tbc-filter-nl");
-    var filterNlApplyBtn = document.getElementById("tbc-filter-nl-apply");
-    var filterNlStatusEl = document.getElementById("tbc-filter-nl-status");
     var filterDraftRuleBtn = document.getElementById("tbc-filter-draft-rule");
     var filterRulePanel = document.getElementById("tbc-filter-rule-panel");
     var filterRuleText = document.getElementById("tbc-filter-rule-text");
@@ -255,7 +251,6 @@
 
     var sessionKey = "tbc-review-" + runId;
     var filterDebounceTimer = null;
-    var facetsLoaded = false;
 
     function loadSession() {
       try {
@@ -295,17 +290,44 @@
     var explainCache = stored.explain || {};
     var compiledRules = stored.compiled || {};
     var ruleDrafts = stored.drafts || {};
-    var facetsCache = null;
     var ruleTargetHint = stored.ruleTarget || "";
     var filterRuleDraft = stored.filterRuleDraft || "";
     var filterBatchRule = stored.filterBatchRule || null;
+    var filterTbcReason = (stored.filters && stored.filters.tbc_reason) || "";
+    var filterReasonMetaEl = null;
+
+    function ensureFilterReasonMeta() {
+      if (filterReasonMetaEl) return filterReasonMetaEl;
+      var bar = document.getElementById("tbc-filter-bar");
+      if (!bar || !bar.parentNode) return null;
+      filterReasonMetaEl = document.createElement("p");
+      filterReasonMetaEl.id = "tbc-filter-reason-meta";
+      filterReasonMetaEl.className = "meta";
+      filterReasonMetaEl.hidden = true;
+      bar.parentNode.insertBefore(filterReasonMetaEl, bar.nextSibling);
+      return filterReasonMetaEl;
+    }
+
+    function updateFilterReasonMeta() {
+      var el = ensureFilterReasonMeta();
+      if (!el) return;
+      if (!filterTbcReason) {
+        el.hidden = true;
+        el.textContent = "";
+        return;
+      }
+      el.hidden = false;
+      el.textContent = filterTbcReason.startsWith("!")
+        ? "TBC reason filter: not " + filterTbcReason.slice(1)
+        : "TBC reason filter: " + filterTbcReason;
+    }
 
     function getFilterState() {
       return {
         q: filterQEl ? (filterQEl.value || "").trim() : "",
         tier1: filterTier1El ? filterTier1El.value || "" : "",
         categories: filterCategoriesEl ? (filterCategoriesEl.value || "").trim() : "",
-        nl: filterNlEl ? (filterNlEl.value || "").trim() : "",
+        tbc_reason: filterTbcReason || "",
       };
     }
 
@@ -314,6 +336,10 @@
       if (filterQEl) filterQEl.value = state.q || "";
       if (filterTier1El) filterTier1El.value = state.tier1 || "";
       if (filterCategoriesEl) filterCategoriesEl.value = state.categories || "";
+      if (Object.prototype.hasOwnProperty.call(state, "tbc_reason")) {
+        filterTbcReason = state.tbc_reason || "";
+      }
+      updateFilterReasonMeta();
     }
 
     function filterQueryString(extra) {
@@ -322,6 +348,7 @@
       if (f.q) params.set("q", f.q);
       if (f.tier1) params.set("tier1", f.tier1);
       if (f.categories) params.set("categories", f.categories);
+      if (f.tbc_reason) params.set("tbc_reason", f.tbc_reason);
       if (extra) {
         Object.keys(extra).forEach(function (k) {
           if (extra[k] != null && extra[k] !== "") params.set(k, String(extra[k]));
@@ -336,86 +363,24 @@
       filterDebounceTimer = setTimeout(function () {
         offset = 0;
         saveSession();
+        updateFilterDraftButton();
         loadChunk();
       }, 280);
     }
 
-    function renderFilterChips(facets) {
-      if (!filterChipsEl) return;
-      if (!facets) {
-        filterChipsEl.innerHTML = "";
-        return;
-      }
-      var chips = [];
-      function addChip(label, kind, value) {
-        chips.push(
-          '<button type="button" class="tbc-filter-chip" data-kind="' +
-            escHtml(kind) +
-            '" data-value="' +
-            escHtml(value) +
-            '">' +
-            escHtml(label) +
-            "</button>"
-        );
-      }
-      (facets.top_candidates || []).slice(0, 8).forEach(function (item) {
-        var short = item.label.split(" → ").pop();
-        addChip(short + " (" + item.count + ")", "category", short);
-      });
-      (facets.tier4 || []).slice(0, 6).forEach(function (item) {
-        if (item.label.toLowerCase().indexOf("tbc") !== -1) return;
-        addChip(item.label + " (" + item.count + ")", "category", item.label);
-      });
-      if (!chips.length) {
-        filterChipsEl.innerHTML =
-          '<span class="meta">Quick focus: pick a category chip or type keywords above.</span>';
-        return;
-      }
-      filterChipsEl.innerHTML =
-        '<span class="meta">Quick focus:</span> ' + chips.join(" ");
-      filterChipsEl.querySelectorAll(".tbc-filter-chip").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var kind = btn.getAttribute("data-kind");
-          var value = btn.getAttribute("data-value") || "";
-          if (kind === "category" && filterCategoriesEl) {
-            var existing = (filterCategoriesEl.value || "")
-              .split(",")
-              .map(function (s) { return s.trim(); })
-              .filter(Boolean);
-            if (existing.indexOf(value) === -1) existing.push(value);
-            filterCategoriesEl.value = existing.join(", ");
-          } else if (kind === "tier1" && filterTier1El) {
-            filterTier1El.value = value;
-          }
-          offset = 0;
-          saveSession();
-          loadChunk();
-        });
-      });
-    }
-
     setFilterInputs(stored.filters || {});
-    if (filterNlEl && stored.filters && stored.filters.nl) {
-      filterNlEl.value = stored.filters.nl;
-    }
     if (filterRuleText && filterRuleDraft) {
       filterRuleText.value = filterRuleDraft;
     }
 
     function updateFilterDraftButton() {
       var active = getFilterState();
-      var isActive = !!(active.q || active.tier1 || active.categories);
+      var isActive = !!(active.q || active.tier1 || active.categories || active.tbc_reason);
       if (filterDraftRuleBtn) filterDraftRuleBtn.hidden = !isActive;
     }
 
-    function showNlStatus(msg, isError) {
-      if (!filterNlStatusEl) return;
-      filterNlStatusEl.hidden = !msg;
-      filterNlStatusEl.textContent = msg || "";
-      filterNlStatusEl.classList.toggle("tbc-filter-nl-status--error", !!isError);
-    }
-
     updateFilterDraftButton();
+    updateFilterReasonMeta();
 
     function chunkLimit() {
       return parseInt(chunkSizeEl.value, 10) || 10;
@@ -586,7 +551,6 @@
       var qs = filterQueryString({
         offset: offset,
         limit: limit,
-        include_facets: facetsLoaded ? 0 : 1,
       });
       fetch("/run/" + encodeURIComponent(runId) + "/tbc_queue" + qs)
         .then(function (r) {
@@ -595,13 +559,6 @@
         })
         .then(function (data) {
           currentPayload = data;
-          if (data.facets) {
-            facetsCache = data.facets;
-            facetsLoaded = true;
-            renderFilterChips(facetsCache);
-          } else if (facetsCache) {
-            renderFilterChips(facetsCache);
-          }
           if (data.total_pending === 0 && data.total_pending_unfiltered === 0) {
             showCompletionPanel({ total_pending: 0 });
             updateBatchConfirmButton();
@@ -1215,63 +1172,19 @@
       filterTier1El.addEventListener("change", function () {
         offset = 0;
         saveSession();
+        updateFilterDraftButton();
         loadChunk();
       });
     }
     if (filterClearBtn) {
       filterClearBtn.addEventListener("click", function () {
-        setFilterInputs({ q: "", tier1: "", categories: "" });
-        if (filterNlEl) filterNlEl.value = "";
+        setFilterInputs({ q: "", tier1: "", categories: "", tbc_reason: "" });
         ruleTargetHint = "";
         if (filterRulePanel) filterRulePanel.hidden = true;
         offset = 0;
         saveSession();
+        updateFilterDraftButton();
         loadChunk();
-      });
-    }
-
-    if (filterNlApplyBtn && filterNlEl) {
-      filterNlApplyBtn.addEventListener("click", function () {
-        var text = (filterNlEl.value || "").trim();
-        if (!text) return;
-        showNlStatus("Parsing focus…", false);
-        fetch("/run/" + encodeURIComponent(runId) + "/tbc_parse_focus", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text }),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (!data.ok) {
-              showNlStatus((data.errors && data.errors[0]) || "Could not parse focus.", true);
-              return;
-            }
-            var f = data.filter || {};
-            setFilterInputs({
-              q: f.q || "",
-              tier1: f.tier1 || "",
-              categories: (f.categories || []).join(", "),
-            });
-            ruleTargetHint = data.rule_target || "";
-            showNlStatus(
-              (data.rationale || "Focus applied.") +
-                (data.source ? " (" + data.source + ")" : ""),
-              false
-            );
-            offset = 0;
-            saveSession();
-            updateFilterDraftButton();
-            loadChunk();
-          })
-          .catch(function () {
-            showNlStatus("Parse focus failed.", true);
-          });
-      });
-      filterNlEl.addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter") {
-          ev.preventDefault();
-          filterNlApplyBtn.click();
-        }
       });
     }
 
@@ -1494,6 +1407,51 @@
           });
       });
     }
+
+    window.addEventListener("cs-tickets:apply-review-focus", function (ev) {
+      var detail = (ev && ev.detail) || {};
+      var f = detail.filter || detail.workbench_filter || {};
+      if (detail.clear || f.active === false) {
+        setFilterInputs({ q: "", tier1: "", categories: "", tbc_reason: "" });
+        ruleTargetHint = "";
+        offset = 0;
+        saveSession();
+        updateFilterDraftButton();
+        loadChunk();
+        if (typeof detail._markApplied === "function") detail._markApplied("tbc");
+        return;
+      }
+      var cats = f.categories || [];
+      if (!Array.isArray(cats)) cats = [];
+      var tbcReason = f.tbc_reason || "";
+      if (!(f.q || f.tier1 || cats.length || tbcReason || f.active)) return;
+      setFilterInputs({
+        q: f.q || "",
+        tier1: f.tier1 || "",
+        categories: cats.join(", "),
+        tbc_reason: tbcReason,
+      });
+      ruleTargetHint = detail.rule_target || f.rule_target || "";
+      offset = 0;
+      saveSession();
+      updateFilterDraftButton();
+      loadChunk();
+      if (typeof detail._markApplied === "function") detail._markApplied("tbc");
+      if (app && app.scrollIntoView) {
+        app.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    });
+
+    window.addEventListener("cs-tickets:clear-review-focus", function (ev) {
+      var detail = (ev && ev.detail) || {};
+      setFilterInputs({ q: "", tier1: "", categories: "", tbc_reason: "" });
+      ruleTargetHint = "";
+      offset = 0;
+      saveSession();
+      updateFilterDraftButton();
+      loadChunk();
+      if (typeof detail._markApplied === "function") detail._markApplied("tbc");
+    });
 
     loadChunk();
   });

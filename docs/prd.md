@@ -2,8 +2,8 @@
 
 **Product:** CS Ticket Automation (`cs-tickets`)  
 **Owner:** SCMP Customer Support / ITBS (engineering)  
-**Status:** Phase 1 — in production (CLI, classifier, portal); ongoing classifier tuning  
-**Last updated:** 2026-05-19
+**Status:** Phase 2 — portal maintenance workflows shipped; ongoing classifier tuning  
+**Last updated:** 2026-07-16
 
 ---
 
@@ -24,7 +24,7 @@ The business needs a **repeatable, explainable** way to turn Zendesk NDJSON expo
 | **Automate tier assignment** | Map each ticket to an allow-listed 5-tuple tier classification. |
 | **Preserve taxonomy integrity** | Never emit a tier combination outside the approved allow-list. |
 | **Explain decisions** | Support audit of why a ticket received a tier (rules, scores, fallbacks). |
-| **Operational surfaces** | CLI for batch jobs; web portal for upload, preview, and Excel download. |
+| **Operational surfaces** | CLI for batch jobs; web portal for upload, review workbenches, rule maintenance, and Excel download. |
 
 ### Success metrics
 
@@ -33,14 +33,15 @@ The business needs a **repeatable, explainable** way to turn Zendesk NDJSON expo
 | **TBC (Manual Review) rate** | Decrease over time | Baseline ~21–29% on recent exports; post–rule batch ~14–20%. |
 | **Classifier warnings** | Near zero | Coercion / allow-list violations should be rare. |
 | **Processing throughput** | Full export in minutes | Streaming NDJSON; no ML inference latency. |
-| **Rule maintainability** | Add rules without code deploy (where possible) | JSON `RuleSpec` for simple patterns; computed rules for disambiguation. |
+| **Rule maintainability** | Add rules without code deploy (where possible) | JSON `RuleSpec`, Rules chat compile, Learn confirm; computed rules for disambiguation. |
 
-### Non-goals (Phase 1)
+### Non-goals
 
 - Replacing Zendesk as the system of record.
 - Fully automated closure or routing of tickets without human review.
-- ML/LLM-based classification in production.
+- **LLM/ML-based classification on the `/run` hot path** (LLM is allowed for rule *drafting* and optional TBC suggestions only).
 - Fuzzy matching against taxonomy labels without explicit signals.
+- Auto-commit of rule or allow-list changes without human Confirm.
 
 ---
 
@@ -48,10 +49,11 @@ The business needs a **repeatable, explainable** way to turn Zendesk NDJSON expo
 
 | Persona | Needs |
 |---------|--------|
-| **CS analyst / team lead** | Upload export, see tier breakdown, download Excel for review and reporting. |
+| **CS analyst** | Upload export, review tier breakdown, TBC queue, category audit, download Excel. |
+| **CS team lead** | Confirm rule and allow-list changes, preview impact, revert bad promotes. |
 | **Operations engineer** | Run CLI in CI or locally; deploy portal to dev/prod Kubernetes. |
-| **Taxonomy owner** | Update `doc/Taxonomy.csv` and reference workbook; expect allow-list to reflect changes. |
-| **Classifier maintainer** | Add rules from TBC audits; run `tools/audit_classifier.py`; read implementation plan in `docs/plans/`. |
+| **Taxonomy owner** | Update taxonomy protocol; review Learn New commits to live config on Drive. |
+| **Classifier maintainer** | Add rules from TBC audits; Rules chat; run `tools/audit_classifier.py`; Christine sessions. |
 
 ---
 
@@ -65,16 +67,26 @@ The business needs a **repeatable, explainable** way to turn Zendesk NDJSON expo
 4. **As a maintainer**, I audit TBC rate and top fallback tags/subjects on a sample export before merging rule changes.
 5. **As a taxonomy owner**, I know that only tier tuples present in the workbook, taxonomy CSV, or pipeline fallbacks can appear on output.
 
+### Phase 2 — delivered (portal maintenance)
+
+6. **As an analyst**, I review category buckets on a classified run and drill into mismatches (Category audit).
+7. **As an analyst**, I work through TBC tickets in a queue with filters, explanations, and optional AI suggestions.
+8. **As a maintainer**, I draft routing rules in natural language, preview impact on a live run, and hand off to a lead for Confirm.
+9. **As a lead**, I Confirm accepted rules and allow-list tuples into live config on Drive without redeploying the image.
+10. **As a maintainer**, I revert the last Learn confirm when `config_version` still matches.
+11. **As a maintainer**, I run Christine orchestration (Cursor skill or session runner) against the same portal APIs.
+
 ### Should have (partial / in progress)
 
-6. **As a maintainer**, I reduce TBC for recurring patterns (PR noise, cancel/non-renewal, access/login, order confirmations) without increasing misclassification.
-7. **As an analyst**, I understand from documentation how scoring and TBC fallback work (portal docs + README).
+12. **As a maintainer**, I reduce TBC for recurring patterns without increasing misclassification.
+13. **As an analyst**, I understand scoring and TBC fallback (portal docs + README + HANDOFF).
 
 ### Could have (future)
 
-8. **As an analyst**, I trigger categorization from Google Sheets / Apps Script against a hosted API.
-9. **As a maintainer**, I classify reply threads using parent ticket tags or full conversation text, not subject-only snippets.
-10. **As a maintainer**, I label ambiguous buckets (e.g. AlipayHK auto-debit notices) once, then encode stable rules.
+14. **As an analyst**, I trigger categorization from Google Sheets / Apps Script against a hosted API.
+15. **As a maintainer**, I classify reply threads using parent ticket tags or full conversation text by default.
+16. **As a maintainer**, I label ambiguous buckets once, then encode stable rules.
+17. **As an analyst**, I use a persistent run store across portal replicas (today: in-memory, ephemeral).
 
 ---
 
@@ -105,7 +117,19 @@ The business needs a **repeatable, explainable** way to turn Zendesk NDJSON expo
 |----|-------------|
 | FR-OUT-01 | Emit rows conforming to `MASTER_COLUMNS` (base fields + five tier columns). |
 | FR-OUT-02 | CLI writes CSV to a specified path. |
-| FR-OUT-03 | Portal provides HTML tier breakdown, ticket preview (first N rows), and `.xlsx` download (Tickets + Tier breakdown sheets). |
+| FR-OUT-03 | Portal provides HTML tier breakdown, ticket preview, `.xlsx` download, category audit, TBC queue, and rule maintenance flows. |
+
+### 5.5 Portal maintenance (Phase 2)
+
+| ID | Requirement |
+|----|-------------|
+| FR-PM-01 | **Learn New** (`/learn`): upload classified workbook, preview NDJSON impact, Confirm to `runs/live/` (+ Drive). |
+| FR-PM-02 | **Rules chat** (`/rules`): compile RuleSpec drafts via LLM, preview on live run, Confirm with lead gate. |
+| FR-PM-03 | **Category audit**: bucket review, sweeps, CSV export, NL focus parsing on a run. |
+| FR-PM-04 | **TBC queue**: paginated manual-review workbench with explain, optional suggest, chunk ack. |
+| FR-PM-05 | **Review chat**: orchestrated profile → propose → preview; TBC handoff without auto-compile. |
+| FR-PM-06 | **Revert**: version-guarded restore of last Learn confirm from backup. |
+| FR-PM-07 | **Consistency Gateway**: validate proposals, risk grades, soft conflicts — no auto-write. |
 
 ### 5.4 Operations
 
@@ -146,24 +170,31 @@ Each ticket receives exactly one **5-tuple**:
 
 ## 8. Release phases
 
-### Phase 1 — Current (shipped)
+### Phase 1 — Shipped
 
 - NDJSON → master rows pipeline
 - Weighted classifier + allow-list
-- CLI + local/deployed FastAPI portal
+- CLI + FastAPI portal (classify, download)
 - GitLab CI → Kaniko → K8s (dev/prod)
 - Audit tooling and iterative rule batches
 
-### Phase 2 — Planned (see README / local plans)
+### Phase 2 — Shipped (portal maintenance)
+
+- Learn New / live config on Google Drive (`runs/live/`)
+- Explicit rule authoring (Rules chat + compile/preview/confirm)
+- Category audit and TBC queue workbenches
+- Review chat + Christine orchestration (Cursor skills + session runner)
+- TBC trends dashboard (`/dashboard`)
+- Consistency Gateway and version-guarded revert
+
+Details: [prd-phase2-learning-feedback.md](./prd-phase2-learning-feedback.md), [architecture/agent-skills-framework.md](./architecture/agent-skills-framework.md).
+
+### Phase 3 — Planned
 
 - Apps Script or sheet integration calling hosted pipeline
-- Richer export flattening (parent ticket, latest public comment)
+- Richer export flattening (parent ticket, latest public comment) — partial via `thread_enrich`
+- Persistent run store for multi-replica portal
 - Targeted rules for retention offers, activation, newsletter/unsubscribe, regulatory (OFCA)
-
-### Phase 3 — Optional
-
-- Feedback loop: manual relabel → rule proposals
-- Dashboard for TBC trend by tag/subject cluster over time
 
 ---
 
@@ -183,13 +214,15 @@ Each ticket receives exactly one **5-tuple**:
 | Risk | Mitigation |
 |------|------------|
 | Misclassification on aggressive rules | Confidence gates, margin checks, high weights only for unambiguous phrases; audit before merge. |
-| README vs portal doc drift | Keep portal footer in sync with README (or generate from single source later). |
+| README vs portal doc drift | Canonical: README + HANDOFF; portal collapse copy in `portal_copy.py`; diagram in `portal_docs.py` — see [design.md §6.4](./design.md#64-documentation-in-ui) |
 | AlipayHK / system emails | Hold bulk mapping until sampled; exclude from generic cancel blobs. |
 | Unreachable taxonomy leaves | Audit `unreachable_allow_tuples`; add scorers when volume justifies. |
 
 ---
 
-## 11. Acceptance criteria (Phase 1)
+## 11. Acceptance criteria
+
+### Phase 1
 
 - [x] `pytest` passes on default CI/local setup.
 - [x] CLI produces CSV with all `MASTER_COLUMNS`.
@@ -198,10 +231,24 @@ Each ticket receives exactly one **5-tuple**:
 - [x] `audit_classifier` reports TBC rate and top signals.
 - [x] Documented in README and `docs/design.md`.
 
+### Phase 2
+
+- [x] Learn New confirm writes to `runs/live/` and syncs to Drive when enabled.
+- [x] Rules compile + preview + confirm (lead-gated) promotes RuleSpec to live rules.
+- [x] Category audit and TBC queue available per run.
+- [x] Review chat routes to profile / compile / TBC handoff per intent table.
+- [x] Documented in HANDOFF, api-reference, agent-skills-framework.
+
 ---
 
 ## 12. References
 
 - [README.md](../README.md) — setup, CLI, portal
+- [HANDOFF.md](./HANDOFF.md) — maintainer onboarding
 - [design.md](./design.md) — technical architecture
-- [plans/2026-05-14-tier-classifier-improvements.md](./plans/2026-05-14-tier-classifier-improvements.md) — classifier iteration log and rule backlog
+- [api-reference.md](./api-reference.md) — portal HTTP routes
+- [ops-runbook.md](./ops-runbook.md) — deploy and rollback
+- [architecture/agent-skills-framework.md](./architecture/agent-skills-framework.md) — Review chat and skills
+- [prd-phase2-learning-feedback.md](./prd-phase2-learning-feedback.md) — Learn New / feedback loop spec
+- [plans/README.md](./plans/README.md) — implementation plan index
+- [plans/2026-05-14-tier-classifier-improvements.md](./plans/2026-05-14-tier-classifier-improvements.md) — classifier iteration log

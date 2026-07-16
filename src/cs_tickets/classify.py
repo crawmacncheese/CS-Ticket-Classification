@@ -337,7 +337,7 @@ def _score_tiers(
     *,
     rule_specs: tuple[RuleSpec, ...] | None = None,
 ) -> tuple[dict[tuple[str, str, str, str, str], float], list[RuleEvidence]]:
-    rule_specs = _enabled_rules(rule_specs or load_rule_specs())
+    rule_specs = _enabled_rules(load_rule_specs() if rule_specs is None else rule_specs)
     scores: dict[tuple[str, str, str, str, str], float] = {}
     evidence: list[RuleEvidence] = []
 
@@ -724,7 +724,8 @@ def classify_row_with_explanation(
 ) -> ClassificationDecision:
     """Weighted tier assignment with rule evidence and candidate scores."""
     sig = _signals(row)
-    specs = _enabled_rules(rule_specs or load_rule_specs())
+    # Empty tuple is intentional (sandbox with no live rules); only None loads defaults.
+    specs = _enabled_rules(load_rule_specs() if rule_specs is None else rule_specs)
     override_decision = _try_override_decision(sig, allow, specs)
     if override_decision is not None:
         return override_decision
