@@ -24,15 +24,43 @@ def _upload_christine_run(client: TestClient, repo_root: Path) -> str:
     return next(iter(portal_app._RUNS))
 
 
-def test_review_chat_redirect(repo_root: Path) -> None:
+def test_review_chat_page(repo_root: Path) -> None:
     client = TestClient(app)
     run_id = _upload_christine_run(client, repo_root)
-    resp = client.get(f"/run/{run_id}/review_chat", follow_redirects=False)
-    assert resp.status_code == 302
-    loc = resp.headers.get("location") or ""
-    assert "/rules/new?" in loc
-    assert f"run_id={run_id}" in loc
-    assert "mode=orch" in loc
+    resp = client.get(f"/run/{run_id}/review_chat")
+    assert resp.status_code == 200
+    assert "Review chat" in resp.text
+    assert 'data-orchestration="true"' in resp.text
+    assert "Return to workbench" in resp.text
+    assert f'href="/run/{run_id}/results"' in resp.text
+    assert "nav-active" in resp.text
+    assert "Categorize Tickets" in resp.text
+    assert "Routing Rules" in resp.text
+    # Stays on categorize workbench — not the rules editor shell.
+    assert "/rules/new?" not in resp.text
+    assert 'data-split="true"' in resp.text
+    assert "rules-split-layout" in resp.text
+    assert "rules.js?v=27" in resp.text
+
+
+def test_review_chat_page_return_to(repo_root: Path) -> None:
+    from urllib.parse import quote
+
+    client = TestClient(app)
+    run_id = _upload_christine_run(client, repo_root)
+    audit_path = f"/run/{run_id}/category_audit?tier1=B2C"
+    resp = client.get(f"/run/{run_id}/review_chat?return_to={quote(audit_path, safe='')}")
+    assert resp.status_code == 200
+    assert f'href="{audit_path}"' in resp.text
+    assert 'data-return-to="' + audit_path + '"' in resp.text
+
+
+def test_review_chat_page_rejects_external_return_to(repo_root: Path) -> None:
+    client = TestClient(app)
+    run_id = _upload_christine_run(client, repo_root)
+    resp = client.get(f"/run/{run_id}/review_chat?return_to=https://evil.example")
+    assert resp.status_code == 200
+    assert f'href="/run/{run_id}/results"' in resp.text
 
 
 def test_rules_new_orch_mode_badge(repo_root: Path) -> None:
@@ -42,7 +70,7 @@ def test_rules_new_orch_mode_badge(repo_root: Path) -> None:
     assert resp.status_code == 200
     assert 'data-orchestration="true"' in resp.text
     assert "rules-orch-badge" in resp.text
-    assert "rules.js?v=22" in resp.text
+    assert "rules.js?v=27" in resp.text
 
 
 def test_review_chat_turn_junk_clarifies(repo_root: Path) -> None:
@@ -159,10 +187,12 @@ def test_results_page_has_review_chat_dock(repo_root: Path) -> None:
     assert "Review chat" in resp.text
     assert 'id="workbench-layout"' in resp.text
     assert 'id="review-dock"' in resp.text
+    assert 'id="review-dock-resize"' in resp.text
+    assert "rules-dock-tabs" in resp.text
     assert 'data-dock="true"' in resp.text
     assert f"/run/{run_id}/review_chat" in resp.text  # pop-out
     assert "review_dock.js" in resp.text
-    assert "rules.js?v=22" in resp.text
+    assert "rules.js?v=27" in resp.text
 
 
 def test_category_audit_has_review_chat_dock(repo_root: Path) -> None:

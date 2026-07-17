@@ -17,6 +17,7 @@ from cs_tickets.portal_copy import (
     CATEGORY_AUDIT_PREVIEW_LINK,
     CATEGORY_AUDIT_RESULTS_LINK,
     CATEGORY_AUDIT_SLICE_EMPTY,
+    CATEGORY_AUDIT_SLICE_EMPTY_ALL_TBC,
     CATEGORY_AUDIT_SWEEPS_HEADING,
     CATEGORY_AUDIT_SWEEPS_META,
     CATEGORY_AUDIT_TICKETS_HEADING,
@@ -67,9 +68,10 @@ def _ticket_cards_html(
     chunk_rows: list[dict[str, Any]],
     *,
     run_id: str,
+    empty_message: str = CATEGORY_AUDIT_SLICE_EMPTY,
 ) -> str:
     if not chunk_rows:
-        return f'<p class="meta">{_esc(CATEGORY_AUDIT_SLICE_EMPTY)}</p>'
+        return f'<p class="meta">{_esc(empty_message)}</p>'
     cards: list[str] = []
     for row in chunk_rows:
         tid = str(row.get("id") or "")
@@ -92,8 +94,8 @@ def _ticket_cards_html(
   <p class="category-audit-card-actions">
     <button type="button" class="btn btn-secondary btn-sm category-audit-explain-btn"
       data-ticket-id="{_esc(tid)}">Explain</button>
-    <a class="btn btn-secondary btn-sm"
-      href="/rules/new?run_id={_esc(run_id)}&amp;ticket_id={_esc(tid)}">Propose rule</a>
+    <button type="button" class="btn btn-secondary btn-sm category-audit-propose-rule-btn"
+      data-ticket-id="{_esc(tid)}">Propose rule</button>
   </p>
   <div class="category-audit-explain-panel meta" hidden></div>
 </article>
@@ -167,6 +169,10 @@ def category_audit_page_html(
     )
     if filt.include_tbc:
         meta_line += " Including manual-review (TBC) tickets."
+
+    slice_empty_message = CATEGORY_AUDIT_SLICE_EMPTY
+    if slice_count == 0 and run_total > 0 and classified_total == 0 and not filt.includes_tbc_rows():
+        slice_empty_message = CATEGORY_AUDIT_SLICE_EMPTY_ALL_TBC
 
     preview_href = f"/run/{_esc(run_id)}/results#ticket-preview"
 
@@ -244,7 +250,7 @@ def category_audit_page_html(
       <section class="category-audit-tickets-section" aria-labelledby="category-audit-tickets-heading">
         <h2 class="section-header" id="category-audit-tickets-heading">{_esc(CATEGORY_AUDIT_TICKETS_HEADING)}</h2>
         {_pagination_html(run_id=run_id, filt=filt, offset=offset, limit=limit, total_in_slice=slice_count)}
-        {_ticket_cards_html(chunk_rows, run_id=run_id)}
+        {_ticket_cards_html(chunk_rows, run_id=run_id, empty_message=slice_empty_message)}
         {_pagination_html(run_id=run_id, filt=filt, offset=offset, limit=limit, total_in_slice=slice_count)}
       </section>
 

@@ -95,6 +95,7 @@ def test_run_upload_ndjson(repo_root: Path) -> None:
     assert 'id="workbench-layout"' in r.text
     assert 'data-dock-collapsed="true"' in r.text
     assert 'id="review-dock"' in r.text
+    assert 'id="review-dock-resize"' in r.text
     assert 'id="review-dock-expand"' in r.text
     assert "Segment</th>" in r.text
     assert "Tickets</th>" in r.text

@@ -14,6 +14,14 @@ def _is_manual_review_row(row: dict[str, Any]) -> bool:
     return "tbc" in tier4
 
 
+def _is_manual_review_tier4(tier4: str) -> bool:
+    return "tbc" in str(tier4 or "").lower()
+
+
+def _filter_includes_tbc(filt: CategoryAuditFilter) -> bool:
+    return filt.includes_tbc_rows()
+
+
 @dataclass(frozen=True)
 class CategoryAuditFilter:
     """Filter classified tickets for category audit sessions."""
@@ -53,6 +61,12 @@ class CategoryAuditFilter:
     @property
     def active(self) -> bool:
         return bool(self.q or self.tier1 or self.categories or self.tier4 or self.include_tbc)
+
+    def includes_tbc_rows(self) -> bool:
+        """Whether TBC rows should appear in the slice for this filter."""
+        if self.include_tbc:
+            return True
+        return bool(self.tier4) and _is_manual_review_tier4(self.tier4)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -116,7 +130,7 @@ def row_matches_category_audit_filter(
     row: dict[str, Any],
     filt: CategoryAuditFilter,
 ) -> bool:
-    if not filt.include_tbc and _is_manual_review_row(row):
+    if not _filter_includes_tbc(filt) and _is_manual_review_row(row):
         return False
     if filt.q:
         q = str(filt.q).lower()
@@ -153,7 +167,7 @@ def category_audit_slice_stats(
     filt: CategoryAuditFilter,
 ) -> dict[str, Any]:
     classified_total = sum(
-        1 for row in all_rows if filt.include_tbc or not _is_manual_review_row(row)
+        1 for row in all_rows if _filter_includes_tbc(filt) or not _is_manual_review_row(row)
     )
     return {
         "total_in_run": len(all_rows),

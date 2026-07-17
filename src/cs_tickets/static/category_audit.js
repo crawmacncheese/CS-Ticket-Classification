@@ -145,6 +145,20 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function bindProposeRuleButtons() {
+    document.querySelectorAll(".category-audit-propose-rule-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const ticketId = btn.dataset.ticketId || "";
+        if (!ticketId) return;
+        window.dispatchEvent(
+          new CustomEvent("cs-tickets:propose-rule-from-ticket", {
+            detail: { ticketId, runId },
+          })
+        );
+      });
+    });
+  }
+
   if (reclassifyBtn) {
     reclassifyBtn.addEventListener("click", () => {
       reclassifyBtn.disabled = true;
@@ -182,4 +196,5 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadSweeps();
   bindExplainButtons();
+  bindProposeRuleButtons();
 });

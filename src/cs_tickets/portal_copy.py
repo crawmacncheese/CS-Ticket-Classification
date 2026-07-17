@@ -36,6 +36,15 @@ TBC_QUEUE_BUTTON = "Start manual review"
 TBC_QUEUE_PAGE_TITLE = "Manual review queue"
 
 REVIEW_CHAT_BUTTON = "Review chat"
+REVIEW_CHAT_PAGE_TITLE = "Review chat"
+REVIEW_CHAT_BACK_LINK = "← Return to workbench"
+RULES_REVIEW_HEADING = "Compiled rule (review before Confirm)"
+RULES_REVIEW_EMPTY = (
+    "No compiled rule yet. Use chat to profile a focus or draft a rule "
+    'with a Map/compile phrase — then preview and confirm here.'
+)
+RULES_DOCK_TAB_CHAT = "Chat"
+RULES_DOCK_TAB_RULE = "Rule review"
 CATEGORY_AUDIT_BUTTON = "Category audit"
 CATEGORY_AUDIT_PAGE_TITLE = "Category audit"
 CATEGORY_AUDIT_PAGE_INTRO = (
@@ -46,6 +55,10 @@ CATEGORY_AUDIT_PAGE_INTRO = (
 CATEGORY_AUDIT_RESULTS_LINK = "← Run results"
 CATEGORY_AUDIT_PREVIEW_LINK = "Ticket preview"
 CATEGORY_AUDIT_SLICE_EMPTY = "No tickets match the current audit filters."
+CATEGORY_AUDIT_SLICE_EMPTY_ALL_TBC = (
+    "All tickets in this run need manual review (TBC). "
+    'Enable "Include manual review (TBC)" above, or use the TBC queue to triage them.'
+)
 CATEGORY_AUDIT_INCLUDE_TBC_LABEL = "Include manual review (TBC)"
 CATEGORY_AUDIT_TIER_LINK = "Audit"
 CATEGORY_AUDIT_OPEN_SLICE = "Open audit view for this category"

@@ -884,6 +884,10 @@
         confirmBtn.addEventListener("click", function () {
           var rule = compiledRules[ticketId];
           if (!rule || !window.confirm("Confirm this rule to live config?")) return;
+          var confirmDefaultLabel = confirmBtn.textContent;
+          confirmBtn.disabled = true;
+          confirmBtn.textContent = "Confirming…";
+          confirmBtn.setAttribute("aria-busy", "true");
           fetch("/rules/confirm", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -900,6 +904,7 @@
               }
               delete compiledRules[ticketId];
               saveSession();
+              confirmBtn.textContent = "Reclassifying run…";
               return fetch("/run/" + encodeURIComponent(runId) + "/reclassify", {
                 method: "POST",
               });
@@ -910,6 +915,11 @@
             })
             .catch(function (err) {
               alert(err.message || "Confirm failed.");
+            })
+            .finally(function () {
+              confirmBtn.textContent = confirmDefaultLabel;
+              confirmBtn.removeAttribute("aria-busy");
+              confirmBtn.disabled = false;
             });
         });
       }
@@ -1380,6 +1390,10 @@
     if (filterRuleConfirmBtn) {
       filterRuleConfirmBtn.addEventListener("click", function () {
         if (!filterBatchRule || !window.confirm("Confirm this batch rule to live config?")) return;
+        var confirmDefaultLabel = filterRuleConfirmBtn.textContent;
+        filterRuleConfirmBtn.disabled = true;
+        filterRuleConfirmBtn.textContent = "Confirming…";
+        filterRuleConfirmBtn.setAttribute("aria-busy", "true");
         fetch("/rules/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1396,6 +1410,7 @@
             }
             filterBatchRule = null;
             saveSession();
+            filterRuleConfirmBtn.textContent = "Reclassifying run…";
             return fetch("/run/" + encodeURIComponent(runId) + "/reclassify", { method: "POST" });
           })
           .then(function () {
@@ -1404,6 +1419,11 @@
           })
           .catch(function (err) {
             alert(err.message || "Confirm failed.");
+          })
+          .finally(function () {
+            filterRuleConfirmBtn.textContent = confirmDefaultLabel;
+            filterRuleConfirmBtn.removeAttribute("aria-busy");
+            filterRuleConfirmBtn.disabled = false;
           });
       });
     }

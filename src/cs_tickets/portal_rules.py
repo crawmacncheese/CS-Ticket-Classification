@@ -8,6 +8,13 @@ from typing import Any
 from cs_tickets.classifier_rules import RuleSpec, _rule_from_dict, rule_spec_to_json
 from cs_tickets.classify import ClassificationDecision, classify_row_with_explanation
 from cs_tickets.portal_classify_context import build_tbc_rule_prefill
+from cs_tickets.portal_copy import (
+    RULES_CONFIRM_BUTTON,
+    RULES_DOCK_TAB_CHAT,
+    RULES_DOCK_TAB_RULE,
+    RULES_REVIEW_EMPTY,
+    RULES_REVIEW_HEADING,
+)
 from cs_tickets.taxonomy import AllowList
 
 
@@ -242,6 +249,8 @@ def rules_editor_html(
     can_confirm: bool = True,
     orchestration: bool = False,
     dock: bool = False,
+    split: bool = False,
+    return_to: str = "",
 ) -> str:
     initial_json = json.dumps(rule_spec_to_json(initial_rule)) if initial_rule else "null"
     # Always include run/ticket inputs so preview can work even when the page
@@ -335,19 +344,54 @@ def rules_editor_html(
             "</div>"
         )
     dock_cls = " rules-app--dock" if dock else ""
-    return f"""
-    <script type="application/json" id="rules-initial-rule">{initial_json}</script>
-    <div id="rules-app" class="rules-app{dock_cls}"
-      data-can-confirm="{"true" if can_confirm else "false"}"
-      data-orchestration="{"true" if orch else "false"}"
-      data-preview-ok="false"
-      data-dock="{"true" if dock else "false"}">
-      <div class="rules-orch-header">
-        {badge}
-        {orch_hint}
-      </div>
-      {context_panel}
-      {lead_note}
+    split_cls = " rules-app--split" if split else ""
+    return_to_attr = f' data-return-to="{_esc(return_to)}"' if return_to else ""
+    review_panel_hidden = "" if split else " hidden"
+    review_empty = (
+        f'<p id="rules-review-empty" class="rules-review-empty meta">{_esc(RULES_REVIEW_EMPTY)}</p>'
+        if split
+        else ""
+    )
+    review_body_attrs = ' id="rules-review-body"' + (" hidden" if split else "")
+
+    def _review_panel(*, panel_hidden: str, empty_html: str, body_attrs: str, extra_cls: str = "") -> str:
+        cls = f"rules-review-panel{extra_cls}{panel_hidden}"
+        return f"""
+      <div id="rules-review-panel" class="{cls.strip()}">
+        <h2 class="rules-review-heading">{_esc(RULES_REVIEW_HEADING)}</h2>
+        {empty_html}
+        <div{body_attrs}>
+          <div id="rules-review-summary" class="rules-review-summary"></div>
+          <details class="rules-advanced-edit">
+            <summary>Advanced edit (JSON)</summary>
+            <textarea id="rules-advanced-json" class="rules-advanced-json" rows="{advanced_rows}"></textarea>
+          </details>
+          <div class="rules-review-actions">
+            {upload_block}
+            <button type="button" class="btn btn-primary" id="rules-confirm-btn" disabled{confirm_attrs}>{_esc(RULES_CONFIRM_BUTTON)}</button>
+          </div>
+          <div id="rules-preview-results" class="rules-preview-results" hidden></div>
+        </div>
+      </div>""".strip()
+
+    review_panel_stack = _review_panel(
+        panel_hidden=" hidden",
+        empty_html="",
+        body_attrs="",
+    )
+    review_panel_split = _review_panel(
+        panel_hidden="",
+        empty_html=review_empty,
+        body_attrs=review_body_attrs,
+    )
+    review_panel_dock = _review_panel(
+        panel_hidden="",
+        empty_html="",
+        body_attrs="",
+        extra_cls=" rules-review-panel--dock-tab",
+    )
+
+    chat_panel = f"""
       <div class="rules-chat-panel">
         <div id="rules-chat-log" class="rules-chat-log" aria-live="polite"></div>
         <div id="rules-exec-log" class="rules-exec-log meta" hidden></div>
@@ -357,20 +401,50 @@ def rules_editor_html(
             placeholder="{placeholder}">{prefill_esc}</textarea>
           <button type="submit" class="btn btn-primary" id="rules-send-btn">{send_label}</button>
         </form>
+      </div>""".strip()
+
+    if dock:
+        main_panels = f"""
+      <div class="rules-dock-tabs" id="rules-dock-tabs" role="tablist" aria-label="Review chat views">
+        <button type="button" class="rules-dock-tab is-active" id="rules-dock-tab-chat"
+          data-rules-tab="chat" role="tab" aria-selected="true" aria-controls="rules-dock-panel-chat">{_esc(RULES_DOCK_TAB_CHAT)}</button>
+        <button type="button" class="rules-dock-tab" id="rules-dock-tab-rule"
+          data-rules-tab="rule" role="tab" aria-selected="false" aria-controls="rules-dock-panel-rule" hidden>{_esc(RULES_DOCK_TAB_RULE)}</button>
       </div>
-      <div id="rules-review-panel" class="rules-review-panel" hidden>
-        <h2 class="rules-review-heading">Compiled rule (review before Confirm)</h2>
-        <div id="rules-review-summary" class="rules-review-summary"></div>
-        <details class="rules-advanced-edit">
-          <summary>Advanced edit (JSON)</summary>
-          <textarea id="rules-advanced-json" class="rules-advanced-json" rows="{advanced_rows}"></textarea>
-        </details>
-        <div class="rules-review-actions">
-          {upload_block}
-          <button type="button" class="btn btn-primary" id="rules-confirm-btn" disabled{confirm_attrs}>Confirm live</button>
+      <div class="rules-dock-panels">
+        <div class="rules-dock-panel" id="rules-dock-panel-chat" data-rules-panel="chat" role="tabpanel">
+          {chat_panel}
         </div>
-        <div id="rules-preview-results" class="rules-preview-results" hidden></div>
+        <div class="rules-dock-panel" id="rules-dock-panel-rule" data-rules-panel="rule" role="tabpanel" hidden>
+          {review_panel_dock}
+        </div>
+      </div>"""
+    elif split:
+        main_panels = f"""
+      <div class="rules-split-layout">
+        {chat_panel}
+        {review_panel_split}
+      </div>"""
+    else:
+        main_panels = f"""
+      {chat_panel}
+      {review_panel_stack}"""
+
+    return f"""
+    <script type="application/json" id="rules-initial-rule">{initial_json}</script>
+    <div id="rules-app" class="rules-app{dock_cls}{split_cls}"
+      data-can-confirm="{"true" if can_confirm else "false"}"
+      data-orchestration="{"true" if orch else "false"}"
+      data-preview-ok="false"
+      data-dock="{"true" if dock else "false"}"
+      data-split="{"true" if split else "false"}"{return_to_attr}>
+      <div class="rules-orch-header">
+        {badge}
+        {orch_hint}
       </div>
+      {context_panel}
+      {lead_note}
+      {main_panels}
     </div>
     """
 

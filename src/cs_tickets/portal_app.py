@@ -94,6 +94,8 @@ from cs_tickets.portal_copy import (
     RULES_NEW_BUTTON,
     RULES_PAGE_INTRO,
     RULES_PAGE_TITLE,
+    REVIEW_CHAT_BACK_LINK,
+    REVIEW_CHAT_PAGE_TITLE,
     TBC_QUEUE_BUTTON,
     TBC_QUEUE_PAGE_TITLE,
     TECHNICAL_DETAILS_BODY,
@@ -648,8 +650,8 @@ def _workbench_page_scripts(*page_scripts: str) -> list[str]:
     """Page scripts plus Review chat dock (rules.js orchestrator + collapse UI)."""
     return [
         *page_scripts,
-        "/static/rules.js?v=22",
-        "/static/review_dock.js?v=3",
+        "/static/rules.js?v=27",
+        "/static/review_dock.js?v=7",
     ]
 
 
@@ -734,7 +736,7 @@ def run_category_audit_page(
         active="categorize",
         body=body,
         wide=True,
-        extra_scripts=_workbench_page_scripts("/static/category_audit.js?v=7"),
+        extra_scripts=_workbench_page_scripts("/static/category_audit.js?v=8"),
     )
 
 
@@ -859,22 +861,46 @@ def run_category_audit_parse_focus(run_id: str, body: dict = Body(...)) -> JSONR
     return JSONResponse(payload)
 
 
-@app.get("/run/{run_id}/review_chat")
-def run_review_chat_redirect(
+@app.get("/run/{run_id}/review_chat", response_class=HTMLResponse)
+def run_review_chat_page(
     run_id: str,
     ticket_id: str | None = None,
     prefill: str | None = None,
-) -> RedirectResponse:
-    """Convenience entry: open /rules chat in orchestration mode for this run."""
+    return_to: str | None = None,
+) -> str:
+    """Full-page Review chat for a run — stays under Categorize, not Routing Rules."""
     _get_run_record(run_id)
-    qs = f"run_id={run_id}&mode=orch"
-    if ticket_id:
-        qs += f"&ticket_id={ticket_id}"
-    if prefill:
-        from urllib.parse import quote
-
-        qs += f"&prefill={quote(prefill)}"
-    return RedirectResponse(url=f"/rules/new?{qs}", status_code=302)
+    back_href = _safe_run_return_to(return_to, run_id=run_id)
+    repo_root = _repo_root()
+    prefill_text, initial_rule = _rules_editor_open_context(
+        run_id=run_id,
+        ticket_id=ticket_id,
+        prefill=prefill,
+        rule_id=None,
+        repo_root=repo_root,
+    )
+    can_confirm = portal_allow_confirm()
+    body = f"""
+    <h1 class="page-header">{REVIEW_CHAT_PAGE_TITLE}</h1>
+    <p class="links"><a href="{_esc(back_href)}" class="btn btn-secondary">{REVIEW_CHAT_BACK_LINK}</a></p>
+    {rules_editor_html(
+        prefill=prefill_text,
+        run_id=run_id,
+        ticket_id=ticket_id or "",
+        initial_rule=initial_rule,
+        can_confirm=can_confirm,
+        orchestration=True,
+        split=True,
+        return_to=back_href,
+    )}
+    """
+    return portal_page_html(
+        title=REVIEW_CHAT_PAGE_TITLE,
+        active="categorize",
+        body=body,
+        wide=True,
+        extra_scripts=["/static/rules.js?v=27"],
+    )
 
 
 @app.post("/run/{run_id}/review_chat/turn")
@@ -1016,7 +1042,7 @@ def run_tbc_queue_page(run_id: str, reclassified: str | None = None) -> str:
         active="categorize",
         body=body,
         wide=True,
-        extra_scripts=_workbench_page_scripts("/static/tbc_queue.js?v=14"),
+        extra_scripts=_workbench_page_scripts("/static/tbc_queue.js?v=15"),
     )
 
 
@@ -1674,6 +1700,59 @@ def _rules_run_row(run_id: str, ticket_id: str) -> dict | None:
     return next((r for r in record.rows if str(r.get("id") or "") == ticket_id), None)
 
 
+def _safe_run_return_to(path: str | None, *, run_id: str) -> str:
+    """Allow only in-app return paths for the same run (prevents open redirects)."""
+    default = f"/run/{run_id}/results"
+    if not path:
+        return default
+    candidate = path.strip()
+    if (
+        not candidate.startswith(f"/run/{run_id}/")
+        or candidate.startswith("//")
+        or "://" in candidate
+        or ".." in candidate
+    ):
+        return default
+    return candidate
+
+
+def _rules_editor_open_context(
+    *,
+    run_id: str | None,
+    ticket_id: str | None,
+    prefill: str | None,
+    rule_id: str | None,
+    repo_root: Path,
+) -> tuple[str, object | None]:
+    prefill_text = (prefill or "").strip()
+    initial_rule = None
+    if rule_id:
+        for rule in load_runtime_rule_specs(repo_root, include_disabled=True):
+            if rule.id == rule_id:
+                initial_rule = rule
+                break
+    if run_id and ticket_id and not prefill_text:
+        row = _rules_run_row(run_id, ticket_id)
+        if row:
+            allow = _default_allowlist()
+            rule_specs = load_runtime_rule_specs(repo_root)
+            explain = explain_ticket_payload(row, allow, rule_specs=rule_specs)
+            top_ev = ""
+            if explain.get("evidence"):
+                top_ev = str(explain["evidence"][0].get("rule_id") or "")
+            tier_hint = " → ".join(explain.get("tier") or [])[:80]
+            prefill_text = build_rule_prefill(
+                ticket_id=ticket_id,
+                subject=str(row.get("subject") or ""),
+                suggested_tier=tier_hint,
+                why_tbc=str(explain.get("tbc_reason_detail") or explain.get("tbc_reason") or ""),
+                explain_evidence=top_ev,
+                row=row,
+                explain=explain,
+            )
+    return prefill_text, initial_rule
+
+
 @app.get("/rules", response_class=HTMLResponse)
 def rules_index(
     confirmed: str | None = None,
@@ -1752,34 +1831,15 @@ def rules_new(
     mode: str | None = None,
     prefill: str | None = None,
 ) -> str:
-    prefill_text = (prefill or "").strip()
-    initial_rule = None
     repo_root = _repo_root()
+    prefill_text, initial_rule = _rules_editor_open_context(
+        run_id=run_id,
+        ticket_id=ticket_id,
+        prefill=prefill,
+        rule_id=rule_id,
+        repo_root=repo_root,
+    )
     orch = (mode or "").strip().lower() in ("orch", "orchestration", "audit")
-    if rule_id:
-        for rule in load_runtime_rule_specs(repo_root, include_disabled=True):
-            if rule.id == rule_id:
-                initial_rule = rule
-                break
-    if run_id and ticket_id and not prefill_text:
-        row = _rules_run_row(run_id, ticket_id)
-        if row:
-            allow = _default_allowlist()
-            rule_specs = load_runtime_rule_specs(repo_root)
-            explain = explain_ticket_payload(row, allow, rule_specs=rule_specs)
-            top_ev = ""
-            if explain.get("evidence"):
-                top_ev = str(explain["evidence"][0].get("rule_id") or "")
-            tier_hint = " → ".join(explain.get("tier") or [])[:80]
-            prefill_text = build_rule_prefill(
-                ticket_id=ticket_id,
-                subject=str(row.get("subject") or ""),
-                suggested_tier=tier_hint,
-                why_tbc=str(explain.get("tbc_reason_detail") or explain.get("tbc_reason") or ""),
-                explain_evidence=top_ev,
-                row=row,
-                explain=explain,
-            )
     if run_id and not ticket_id:
         orch = True
     can_confirm = portal_allow_confirm()
@@ -1799,7 +1859,7 @@ def rules_new(
         title=RULES_PAGE_TITLE,
         active="rules",
         body=body,
-        extra_scripts=["/static/rules.js?v=22"],
+        extra_scripts=["/static/rules.js?v=27"],
     )
 
 

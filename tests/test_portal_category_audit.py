@@ -50,12 +50,14 @@ def test_category_audit_page_and_filters(repo_root: Path) -> None:
     page = client.get(f"/run/{run_id}/category_audit")
     assert page.status_code == 200
     assert "category-audit-app" in page.text
-    assert "category_audit.js?v=7" in page.text
+    assert "category_audit.js?v=8" in page.text
     assert "Slice checks" not in page.text
     assert "Full content" in page.text
     assert "Review focus (natural language)" not in page.text
     assert 'id="review-dock"' in page.text
     assert "category-audit-reclassify-btn" in page.text
+    assert "category-audit-propose-rule-btn" in page.text
+    assert f'/rules/new?run_id={run_id}' not in page.text
     assert "category-audit-sweep-rule-compile" not in page.text
 
     filtered = client.get(f"/run/{run_id}/category_audit?tier1=B2C")
@@ -154,3 +156,19 @@ def test_category_audit_export_csv_respects_filter(repo_root: Path) -> None:
     full_lines = full.content.decode("utf-8-sig").strip().splitlines()
     filt_lines = filtered.content.decode("utf-8-sig").strip().splitlines()
     assert len(filt_lines) <= len(full_lines)
+
+
+def test_category_audit_tbc_tier_link_shows_tickets(repo_root: Path) -> None:
+    client = TestClient(app)
+    run_id = _upload_sample_run(client, repo_root)
+    results = client.get(f"/run/{run_id}/results")
+    assert results.status_code == 200
+    # Tier breakdown Audit link for TBC rows must include include_tbc and show tickets.
+    assert "tier4=TBC" in results.text or "TBC+%28Manual+Review%29" in results.text
+    page = client.get(
+        f"/run/{run_id}/category_audit"
+        f"?tier1=B2C&tier4=TBC+%28Manual+Review%29&include_tbc=1"
+    )
+    assert page.status_code == 200
+    assert "category-audit-card" in page.text
+    assert "No tickets match" not in page.text

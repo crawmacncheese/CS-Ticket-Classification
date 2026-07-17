@@ -173,7 +173,11 @@ def tier_stats_table_html(rows: list[dict[str, Any]], *, run_id: str | None = No
         if run_id and t4:
             audit_href = category_audit_url(
                 run_id,
-                CategoryAuditFilter(tier1=t1, tier4=t4),
+                CategoryAuditFilter(
+                    tier1=t1,
+                    tier4=t4,
+                    include_tbc=is_manual_review_row({"Tier4_Type": t4}),
+                ),
             )
             cells += (
                 f'<td class="txt category-audit-cell">'

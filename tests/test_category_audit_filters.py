@@ -44,6 +44,21 @@ def test_filter_b2c_cancellation_excludes_tbc_by_default() -> None:
     assert [r["id"] for r in out] == ["1"]
 
 
+def test_filter_tbc_tier4_includes_manual_review_rows() -> None:
+    rows = [
+        _row("1", tier1="B2C", tbc=True),
+        _row("2", tier1="B2C", tbc=True),
+        _row("3", tier1="B2C", tier4="Cancellation Request"),
+    ]
+    filt = CategoryAuditFilter(
+        tier1="B2C",
+        tier4=TIER_FALLBACK_B2C_TBC[3],
+    )
+    out = filter_category_audit_rows(rows, filt)
+    assert [r["id"] for r in out] == ["1", "2"]
+    assert filt.includes_tbc_rows() is True
+
+
 def test_filter_include_tbc_adds_manual_review_rows() -> None:
     rows = [_row("1"), _row("2", tbc=True)]
     filt = CategoryAuditFilter(include_tbc=True)

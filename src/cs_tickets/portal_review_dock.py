@@ -43,6 +43,8 @@ def wrap_workbench_with_review_dock(
     {main_html}
   </div>
   <aside class="review-dock" id="review-dock" aria-label="{_esc(REVIEW_CHAT_BUTTON)}">
+    <div class="review-dock-resize-handle" id="review-dock-resize" role="separator"
+      aria-orientation="vertical" aria-label="Resize Review chat panel" tabindex="0"></div>
     <header class="review-dock-header">
       <h2 class="review-dock-title">{_esc(REVIEW_CHAT_BUTTON)}</h2>
       <div class="review-dock-header-actions">

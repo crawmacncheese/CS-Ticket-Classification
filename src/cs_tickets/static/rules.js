@@ -81,6 +81,226 @@
     var previewOk = false;
     var activeFocusEl = null;
     var activeFocusNl = "";
+    var confirmBusy = false;
+    var isDock = root.getAttribute("data-dock") === "true";
+    var isSplit = root.getAttribute("data-split") === "true";
+    var chatTranscript = [];
+    var lastReviewMeta = { rationale: "", warnings: [] };
+    var lastPreviewData = null;
+    var SESSION_KEY = "cs-tickets:review-chat-session";
+    var sessionPersistEnabled = true;
+
+    function currentRunId() {
+      return runIdEl ? String(runIdEl.value || "").trim() : "";
+    }
+
+    function persistReviewSession() {
+      if (!sessionPersistEnabled) return;
+      var runId = currentRunId();
+      if (!runId || !orchMode) return;
+      try {
+        sessionStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({
+            v: 1,
+            runId: runId,
+            ticketId: ticketIdEl ? String(ticketIdEl.value || "").trim() : "",
+            messages: messages,
+            chatTranscript: chatTranscript.slice(-80),
+            currentRule: currentRule,
+            previewOk: previewOk,
+            lastReviewMeta: lastReviewMeta,
+            lastPreviewData: lastPreviewData,
+            activeFocusNl: activeFocusNl,
+            dockTab: root.getAttribute("data-rules-tab") || "chat",
+          })
+        );
+      } catch (_e) {
+        /* ignore quota */
+      }
+    }
+
+    window.persistReviewChatSession = persistReviewSession;
+
+    function clearReviewSession() {
+      sessionPersistEnabled = false;
+      try {
+        sessionStorage.removeItem(SESSION_KEY);
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+
+    function dismissCompiledRuleUi() {
+      currentRule = null;
+      lastReviewMeta = { rationale: "", warnings: [] };
+      lastPreviewData = null;
+      setPreviewOk(false);
+      if (reviewSummary) reviewSummary.innerHTML = "";
+      if (advancedJson) advancedJson.value = "";
+      if (previewResults) {
+        previewResults.hidden = true;
+        previewResults.innerHTML = "";
+      }
+      var emptyEl = document.getElementById("rules-review-empty");
+      var bodyEl = document.getElementById("rules-review-body");
+      if (emptyEl) emptyEl.hidden = false;
+      if (bodyEl) bodyEl.hidden = true;
+      if (reviewPanel && !isSplit) {
+        reviewPanel.hidden = true;
+      }
+      var ruleTab = document.getElementById("rules-dock-tab-rule");
+      if (ruleTab) ruleTab.hidden = true;
+      if (isDock) setDockTab("chat");
+      updateWorkbenchRuleBar(null);
+      syncConfirmEnabled();
+    }
+
+    function restoreReviewSession() {
+      var runId = currentRunId();
+      if (!runId || !orchMode) return;
+      var raw;
+      try {
+        raw = sessionStorage.getItem(SESSION_KEY);
+      } catch (_e) {
+        return;
+      }
+      if (!raw) return;
+      var snap;
+      try {
+        snap = JSON.parse(raw);
+      } catch (_e2) {
+        return;
+      }
+      if (!snap || snap.runId !== runId) return;
+
+      messages = Array.isArray(snap.messages) ? snap.messages : [];
+      chatTranscript = Array.isArray(snap.chatTranscript) ? snap.chatTranscript : [];
+      chatLog.innerHTML = "";
+      chatTranscript.forEach(function (entry) {
+        if (entry.type === "msg") {
+          appendChat(entry.role, entry.text, true);
+        } else if (entry.type === "card" && entry.card) {
+          appendCard(entry.card, true);
+        }
+      });
+
+      if (snap.activeFocusNl) {
+        setActiveFocusLabel(snap.activeFocusNl, true);
+      }
+
+      if (snap.currentRule) {
+        var meta = snap.lastReviewMeta || {};
+        renderReview(
+          snap.currentRule,
+          meta.rationale || "",
+          meta.warnings || [],
+          { restore: true }
+        );
+        if (snap.lastPreviewData && snap.lastPreviewData.results) {
+          showPreviewResults(snap.lastPreviewData, true);
+        } else {
+          setPreviewOk(Boolean(snap.previewOk));
+        }
+      }
+
+      if (isDock && snap.dockTab === "rule" && snap.currentRule) {
+        setDockTab("rule");
+      }
+    }
+
+    function setDockTab(tab) {
+      if (!isDock) return;
+      var next = tab === "rule" ? "rule" : "chat";
+      root.setAttribute("data-rules-tab", next);
+      var chatTab = document.getElementById("rules-dock-tab-chat");
+      var ruleTab = document.getElementById("rules-dock-tab-rule");
+      var chatPanel = document.getElementById("rules-dock-panel-chat");
+      var rulePanel = document.getElementById("rules-dock-panel-rule");
+      if (chatTab) {
+        chatTab.classList.toggle("is-active", next === "chat");
+        chatTab.setAttribute("aria-selected", next === "chat" ? "true" : "false");
+      }
+      if (ruleTab) {
+        ruleTab.classList.toggle("is-active", next === "rule");
+        ruleTab.setAttribute("aria-selected", next === "rule" ? "true" : "false");
+      }
+      if (chatPanel) chatPanel.hidden = next !== "chat";
+      if (rulePanel) rulePanel.hidden = next !== "rule";
+      persistReviewSession();
+    }
+
+    function bindDockTabs() {
+      if (!isDock) return;
+      document.querySelectorAll(".rules-dock-tab").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          setDockTab(btn.getAttribute("data-rules-tab") || "chat");
+        });
+      });
+    }
+
+    function updateWorkbenchRuleBar(rule, previewHeadline) {
+      if (!isDock) return;
+      var main = document.querySelector(".workbench-main");
+      if (!main || !rule) {
+        var existing = document.getElementById("rules-workbench-bar");
+        if (existing) existing.remove();
+        return;
+      }
+      var bar = document.getElementById("rules-workbench-bar");
+      if (!bar) {
+        bar = document.createElement("section");
+        bar.id = "rules-workbench-bar";
+        bar.className = "rules-workbench-bar";
+        bar.setAttribute("role", "region");
+        bar.setAttribute("aria-label", "Compiled rule");
+        main.insertBefore(bar, main.firstChild);
+      }
+      var previewLine = previewHeadline
+        ? '<p class="meta rules-workbench-bar-preview">' + escHtml(previewHeadline) + "</p>"
+        : "";
+      bar.innerHTML =
+        '<div class="rules-workbench-bar-main">' +
+        "<strong>Compiled rule</strong> " +
+        '<span class="rules-workbench-bar-tier">' +
+        escHtml(tierPath(rule.tier)) +
+        "</span> " +
+        '<code class="rules-workbench-bar-id">' +
+        escHtml(rule.id) +
+        "</code>" +
+        previewLine +
+        "</div>" +
+        '<div class="rules-workbench-bar-actions">' +
+        '<button type="button" class="btn btn-secondary btn-sm" id="rules-workbench-open-review">Open rule review</button> ' +
+        '<button type="button" class="btn btn-primary btn-sm" id="rules-workbench-confirm">Confirm live</button>' +
+        "</div>";
+      var openBtn = document.getElementById("rules-workbench-open-review");
+      if (openBtn) {
+        openBtn.addEventListener("click", function () {
+          setDockTab("rule");
+          if (reviewPanel) reviewPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        });
+      }
+      var confirmMirror = document.getElementById("rules-workbench-confirm");
+      if (confirmMirror && confirmBtn) {
+        confirmMirror.disabled = confirmBtn.disabled;
+        confirmMirror.addEventListener("click", function () {
+          confirmBtn.click();
+        });
+      }
+    }
+
+    function showReviewSurface() {
+      var emptyEl = document.getElementById("rules-review-empty");
+      var bodyEl = document.getElementById("rules-review-body");
+      if (emptyEl) emptyEl.hidden = true;
+      if (bodyEl) bodyEl.hidden = false;
+      reviewPanel.hidden = false;
+      if (isDock) {
+        var ruleTab = document.getElementById("rules-dock-tab-rule");
+        if (ruleTab) ruleTab.hidden = false;
+      }
+    }
 
     function ensureActiveFocusBar() {
       if (activeFocusEl || !chatLog || !chatLog.parentNode) return activeFocusEl;
@@ -92,13 +312,14 @@
       return activeFocusEl;
     }
 
-    function setActiveFocusLabel(focusNl) {
+    function setActiveFocusLabel(focusNl, skipPersist) {
       activeFocusNl = (focusNl || "").trim();
       var el = ensureActiveFocusBar();
       if (!el) return;
       if (!activeFocusNl) {
         el.hidden = true;
         el.innerHTML = "";
+        if (!skipPersist) persistReviewSession();
         return;
       }
       el.hidden = false;
@@ -113,6 +334,7 @@
           doClearFocus("clear focus");
         });
       }
+      if (!skipPersist) persistReviewSession();
     }
 
     function clearWorkbenchFocus() {
@@ -205,12 +427,49 @@
         confirmBtn.disabled = true;
         return;
       }
+      if (confirmBusy) {
+        confirmBtn.disabled = true;
+        return;
+      }
       var runId = runIdEl ? String(runIdEl.value || "").trim() : "";
-      // With a run: require successful preview this session (D.1 parity).
+      var enabled;
       if (runId && orchMode) {
-        confirmBtn.disabled = !(currentRule && previewOk);
+        enabled = Boolean(currentRule && previewOk);
       } else {
-        confirmBtn.disabled = !currentRule;
+        enabled = Boolean(currentRule);
+      }
+      confirmBtn.disabled = !enabled;
+      var mirror = document.getElementById("rules-workbench-confirm");
+      if (mirror) mirror.disabled = !enabled;
+    }
+
+    function setConfirmBusy(label) {
+      confirmBusy = true;
+      if (!confirmBtn.dataset.defaultLabel) {
+        confirmBtn.dataset.defaultLabel = confirmBtn.textContent.trim();
+      }
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = label;
+      confirmBtn.setAttribute("aria-busy", "true");
+      var mirror = document.getElementById("rules-workbench-confirm");
+      if (mirror) {
+        mirror.disabled = true;
+        mirror.textContent = label;
+      }
+    }
+
+    function clearConfirmBusy() {
+      confirmBusy = false;
+      if (confirmBtn.dataset.defaultLabel) {
+        confirmBtn.textContent = confirmBtn.dataset.defaultLabel;
+      }
+      confirmBtn.removeAttribute("aria-busy");
+      syncConfirmEnabled();
+      if (currentRule) {
+        updateWorkbenchRuleBar(
+          currentRule,
+          lastPreviewData && lastPreviewData.summary ? lastPreviewData.summary.headline : ""
+        );
       }
     }
 
@@ -222,15 +481,19 @@
       execLog.appendChild(line);
     }
 
-    function appendChat(role, text) {
+    function appendChat(role, text, skipPersist) {
       var div = document.createElement("div");
       div.className = "rules-chat-msg rules-chat-msg-" + role;
       div.innerHTML = "<strong>" + (role === "user" ? "You" : "Assistant") + ":</strong> " + escHtml(text);
       chatLog.appendChild(div);
       chatLog.scrollTop = chatLog.scrollHeight;
+      if (!skipPersist) {
+        chatTranscript.push({ type: "msg", role: role, text: text });
+        persistReviewSession();
+      }
     }
 
-    function appendCard(card) {
+    function appendCard(card, skipPersist) {
       var wrap = document.createElement("div");
       wrap.className = "rules-chat-card rules-chat-card-" + escHtml(card.type || "generic");
       if (card.type === "profile_summary") {
@@ -293,6 +556,11 @@
       }
       chatLog.appendChild(wrap);
       chatLog.scrollTop = chatLog.scrollHeight;
+
+      if (!skipPersist) {
+        chatTranscript.push({ type: "card", card: card });
+        persistReviewSession();
+      }
 
       wrap.querySelectorAll(".rules-draft-from-sweep").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -358,7 +626,7 @@
       });
     }
 
-    function showPreviewResults(data) {
+    function showPreviewResults(data, skipPersist) {
       var rows = data.results || [];
       var summary = data.summary || {};
       var headline = summary.headline
@@ -371,12 +639,19 @@
       previewResults.innerHTML = headline + renderPreviewTable(rows);
       previewResults.hidden = false;
       wirePreviewDetailButtons(previewResults);
-      appendCard({ type: "preview", headline: summary.headline || "Preview complete." });
-      appendExec("PREVIEW", summary.headline || "ok");
+      if (!skipPersist) {
+        appendCard({ type: "preview", headline: summary.headline || "Preview complete." });
+        appendExec("PREVIEW", summary.headline || "ok");
+      }
+      lastPreviewData = data;
       setPreviewOk(true);
       if (uploadWrap && String(runIdEl && runIdEl.value || "").trim()) {
         uploadWrap.hidden = true;
       }
+      if (currentRule) {
+        updateWorkbenchRuleBar(currentRule, summary.headline || "");
+      }
+      if (!skipPersist) persistReviewSession();
     }
 
     function previewOnRun(rule) {
@@ -404,11 +679,16 @@
         });
     }
 
-    function renderReview(rule, rationale, warnings) {
+    function renderReview(rule, rationale, warnings, opts) {
+      opts = opts || {};
       currentRule = rule;
+      lastReviewMeta = { rationale: rationale || "", warnings: warnings || [] };
       setMode("Config");
-      setPreviewOk(false);
-      reviewPanel.hidden = false;
+      if (!opts.restore) {
+        setPreviewOk(false);
+        lastPreviewData = null;
+      }
+      showReviewSurface();
       var warn =
         warnings && warnings.length
           ? "<ul class=\"rules-warnings\">" + warnings.map(function (w) { return "<li>" + escHtml(w) + "</li>"; }).join("") + "</ul>"
@@ -424,6 +704,14 @@
       advancedJson.value = JSON.stringify(rule, null, 2);
       if (uploadWrap) uploadWrap.hidden = false;
       syncConfirmEnabled();
+      if (isDock && !opts.restore) {
+        setDockTab("rule");
+      }
+      updateWorkbenchRuleBar(
+        rule,
+        lastPreviewData && lastPreviewData.summary ? lastPreviewData.summary.headline : ""
+      );
+      if (!opts.restore) persistReviewSession();
     }
 
     function doOpenTbc(text) {
@@ -809,6 +1097,7 @@
         return;
       }
       if (!window.confirm("Confirm this rule to live config?")) return;
+      setConfirmBusy("Confirming…");
       fetch("/rules/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -824,6 +1113,7 @@
         })
         .then(function (data) {
           if (!data.ok) {
+            clearConfirmBusy();
             alert((data.errors || []).join("\n"));
             return;
           }
@@ -831,7 +1121,12 @@
             "CONFIRM",
             "config_version_after=" + String(data.config_version_after || "")
           );
+          // Stop session restore + beforeunload from re-saving the confirmed rule.
+          clearReviewSession();
+          dismissCompiledRuleUi();
           if (runId) {
+            var returnTo = root.getAttribute("data-return-to") || "";
+            setConfirmBusy("Reclassifying run…");
             fetch("/run/" + encodeURIComponent(runId) + "/reclassify", { method: "POST" })
               .then(function (r) {
                 if (!r.ok) throw new Error("HTTP " + r.status);
@@ -845,9 +1140,18 @@
                   encodeURIComponent(String(re.tbc_before)) +
                   "&tbc_after=" +
                   encodeURIComponent(String(re.tbc_after));
+                if (returnTo) {
+                  var sep = returnTo.indexOf("?") >= 0 ? "&" : "?";
+                  window.location.href = returnTo + sep + q;
+                  return;
+                }
                 window.location.href = "/run/" + encodeURIComponent(runId) + "/tbc?" + q;
               })
               .catch(function () {
+                if (returnTo) {
+                  window.location.href = returnTo;
+                  return;
+                }
                 window.location.href =
                   "/rules?confirmed=1&version=" +
                   encodeURIComponent(data.config_version_after || "");
@@ -859,6 +1163,7 @@
             encodeURIComponent(data.config_version_after || "");
         })
         .catch(function (err) {
+          clearConfirmBusy();
           alert(err.message || "Confirm failed.");
         });
     });
@@ -870,7 +1175,70 @@
       });
     });
 
+    window.addEventListener("cs-tickets:propose-rule-from-ticket", function (ev) {
+      var detail = (ev && ev.detail) || {};
+      var ticketId = String(detail.ticketId || "").trim();
+      if (!ticketId) return;
+      var runId = runIdEl ? String(runIdEl.value || "").trim() : "";
+      if (!runId && detail.runId) runId = String(detail.runId || "").trim();
+      if (!runId) return;
+      if (ticketIdEl) ticketIdEl.value = ticketId;
+      setMode("Config");
+      fetch(
+        "/run/" +
+          encodeURIComponent(runId) +
+          "/suggest_category/" +
+          encodeURIComponent(ticketId),
+        { method: "POST" }
+      )
+        .then(function (r) {
+          return r.json();
+        })
+        .then(function (data) {
+          var prefill =
+            (data && data.prefill) ||
+            'Update: Map tickets like #' + ticketId + " to [target category].";
+          if (data && data.ok && data.tier_path && data.prefill) {
+            prefill = data.prefill + "\n\nSuggested category: " + data.tier_path + ".";
+          }
+          if (chatInput) {
+            chatInput.value = prefill;
+            chatInput.focus();
+          }
+          appendChat(
+            "assistant",
+            "Loaded a rule draft from ticket #" +
+              ticketId +
+              ". Edit the text and press Send to compile."
+          );
+          appendExec("PROPOSE_RULE", "ticket " + ticketId);
+        })
+        .catch(function () {
+          if (chatInput) {
+            chatInput.value =
+              'Update: Map tickets like #' + ticketId + " to [target category].";
+            chatInput.focus();
+          }
+          appendChat(
+            "assistant",
+            "Could not load a suggestion for ticket #" +
+              ticketId +
+              ". A blank draft is in the input — edit and Send to compile."
+          );
+        });
+    });
+
     if (orchMode && currentRule) setMode("Config");
+    bindDockTabs();
+    restoreReviewSession();
     restoreFocusAppliedNote();
+    if (currentRunId()) {
+      try {
+        sessionStorage.setItem("cs_tickets_last_run_id", currentRunId());
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    window.addEventListener("beforeunload", persistReviewSession);
   });
 })();

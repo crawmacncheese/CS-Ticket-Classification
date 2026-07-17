@@ -1690,6 +1690,7 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
 }
 
 .workbench-layout {
+  --review-dock-width: 16.5rem;
   display: flex;
   flex-direction: row;
   align-items: flex-start;
@@ -1697,6 +1698,11 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
   width: 100%;
   min-height: calc(100vh - 10rem);
   isolation: isolate;
+}
+
+.workbench-layout[data-dock-resizing="true"] {
+  user-select: none;
+  cursor: col-resize;
 }
 
 .workbench-layout[data-dock-collapsed="true"] .review-dock {
@@ -1707,7 +1713,7 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
   /* Prefer shrinking the list over clipping actions under the chat */
   flex: 1 1 auto;
   min-width: 0;
-  max-width: calc(100% - 17rem);
+  max-width: calc(100% - var(--review-dock-width, 16.5rem) - 1rem);
   overflow-x: auto;
   overflow-y: visible;
 }
@@ -1774,10 +1780,9 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
 }
 
 .review-dock {
-  /* Narrower Cursor-like panel so the list keeps usable width */
-  flex: 0 0 16.5rem;
-  width: 16.5rem;
-  max-width: 18rem;
+  /* Narrower Cursor-like panel; width adjustable via drag handle */
+  flex: 0 0 var(--review-dock-width, 16.5rem);
+  width: var(--review-dock-width, 16.5rem);
   box-sizing: border-box;
   position: sticky;
   top: 0.75rem;
@@ -1792,6 +1797,32 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06));
   overflow: hidden;
   z-index: 1;
+}
+
+.review-dock-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  margin-left: -4px;
+  cursor: col-resize;
+  z-index: 3;
+  touch-action: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.review-dock-resize-handle:hover,
+.review-dock-resize-handle:focus-visible,
+.workbench-layout[data-dock-resizing="true"] .review-dock-resize-handle {
+  background: color-mix(in srgb, var(--primary, #2563eb) 35%, transparent);
+}
+
+.review-dock-resize-handle:focus-visible {
+  outline: 2px solid var(--primary, #2563eb);
+  outline-offset: -2px;
 }
 
 .review-dock-header {
@@ -1914,11 +1945,138 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
 }
 
 .rules-app--dock .rules-review-panel {
-  margin-top: 0.5rem;
+  margin-top: 0;
   padding: 0.5rem;
-  flex-shrink: 0;
-  max-height: 40%;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
+  border: 0;
+  background: transparent;
+}
+
+.rules-dock-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.35rem;
+  flex-shrink: 0;
+}
+
+.rules-dock-tab {
+  flex: 1 1 50%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted, #f5f5f5);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+}
+
+.rules-dock-tab.is-active {
+  background: var(--card, #fff);
+  border-color: var(--primary, #2563eb);
+}
+
+.rules-dock-panels {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rules-dock-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.rules-app--split {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: calc(100vh - 12rem);
+}
+
+.rules-split-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
+  gap: 1rem;
+  align-items: start;
+  min-height: calc(100vh - 14rem);
+}
+
+.rules-app--split .rules-chat-log {
+  min-height: 12rem;
+  max-height: calc(100vh - 22rem);
+}
+
+.rules-app--split .rules-review-panel {
+  position: sticky;
+  top: 0.75rem;
+  max-height: calc(100vh - 8rem);
+  overflow-y: auto;
+}
+
+.rules-review-empty {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--card, #fff);
+}
+
+.rules-workbench-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--primary, #2563eb) 6%, var(--card, #fff));
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.06));
+}
+
+.rules-workbench-bar-main {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+
+.rules-workbench-bar-tier {
+  display: inline-block;
+  margin-left: 0.35rem;
+}
+
+.rules-workbench-bar-id {
+  margin-left: 0.35rem;
+}
+
+.rules-workbench-bar-preview {
+  margin: 0.35rem 0 0;
+}
+
+.rules-workbench-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 960px) {
+  .rules-split-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .rules-app--split .rules-review-panel {
+    position: static;
+    max-height: none;
+  }
 }
 
 .rules-app--dock .rules-review-heading {
@@ -1940,13 +2098,12 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
 }
 
 @media (max-width: 900px) {
-  .review-dock {
-    flex-basis: 15rem;
-    width: 15rem;
+  .workbench-layout:not([data-dock-custom-width="true"]) {
+    --review-dock-width: 15rem;
   }
 
-  .workbench-main {
-    max-width: calc(100% - 15.75rem);
+  .review-dock-resize-handle {
+    display: none;
   }
 }
 
@@ -1955,17 +2112,14 @@ table.ticket-preview-table.ticket-preview-table--expanded .preview-col-detail {
     gap: 0.65rem;
   }
 
+  .workbench-layout:not([data-dock-custom-width="true"]) {
+    --review-dock-width: 13.5rem;
+  }
+
   .review-dock {
-    flex-basis: 13.5rem;
-    width: 13.5rem;
-    max-width: 14rem;
     top: 0.5rem;
     height: calc(100vh - 1rem);
     max-height: calc(100vh - 1rem);
-  }
-
-  .workbench-main {
-    max-width: calc(100% - 14.25rem);
   }
 
   .review-dock-header {
